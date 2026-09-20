@@ -6,6 +6,28 @@
 
 ---
 
+## [1.2.1] — 2026-09-20
+
+### 截图
+- 默认目录改为更易找：`%USERPROFILE%\Pictures\AIHelper-Screenshots`
+- 配置页可指定截图目录，支持浏览/打开
+- `browser_screenshot` 返回绝对路径；新增 `get_screenshot_dir`
+- 「路径信息」中显示当前截图目录
+
+### 邮件（1.2.0）
+- **改为本机 Coremail 客户端/网页会话查看**，不再使用 IMAP/POP3
+- 工具：`mail_test` / `mail_launch_client` / `mail_list` / `mail_search` / `mail_read` / `mail_list_folders`
+- 配置：`baseUrl`（网页）、`exePath`（客户端）、可选 `selectors`
+- 移除 `imapflow`
+
+---
+
+## [1.2.0] — 2026-09-20
+
+（并入 1.2.1 说明）
+
+---
+
 ## [1.1.0] — 2026-09-20
 
 ### 约定与工程

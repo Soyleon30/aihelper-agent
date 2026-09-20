@@ -185,6 +185,13 @@ function registerIpc() {
   });
 
   ipcMain.handle('shell:openPath', async (_e, target) => {
+    try {
+      if (target && !fs.existsSync(target)) {
+        // 若是目录路径则创建，便于打开空的截图/下载目录
+        const ext = path.extname(target);
+        if (!ext) fs.mkdirSync(target, { recursive: true });
+      }
+    } catch (_) {}
     return shell.openPath(target);
   });
 
@@ -222,6 +229,21 @@ function registerIpc() {
           }
         } catch (_) {}
         return path.join(app.getPath('userData'), 'downloads');
+      })(),
+      screenshots: (() => {
+        try {
+          const cfgPath = path.join(app.getPath('userData'), 'config.json');
+          if (fs.existsSync(cfgPath)) {
+            const c = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+            const d =
+              (c.tools && c.tools.browser && c.tools.browser.screenshotDir) ||
+              (c.paths && c.paths.screenshotDir) ||
+              '';
+            if (d && String(d).trim()) return path.resolve(String(d).trim());
+          }
+        } catch (_) {}
+        const home = app.getPath('home');
+        return path.join(home, 'Pictures', 'AIHelper-Screenshots');
       })()
     };
   });
@@ -313,6 +335,7 @@ function registerIpc() {
       const { createMailTools } = require('../src/tools/mail');
       const mail = createMailTools({
         config: cfg.tools?.mail || {},
+        userDataPath: app.getPath('userData'),
         logger
       });
       return await mail.mail_test();

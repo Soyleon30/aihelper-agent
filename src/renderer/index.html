@@ -200,61 +200,56 @@
           </div>
 
           <div class="card">
-            <h2>Coremail 邮件（仅查看）</h2>
+            <h2>Coremail 邮件（本机客户端/网页，仅查看）</h2>
             <div class="grid-2">
               <label class="field checkbox">
                 <input id="cfgMailEnabled" type="checkbox" />
                 <span>启用邮件查看</span>
               </label>
               <label class="field">
-                <span>默认文件夹</span>
-                <input id="cfgMailFolder" type="text" placeholder="INBOX" />
+                <span>默认文件夹名</span>
+                <input id="cfgMailFolder" type="text" placeholder="收件箱" />
               </label>
               <label class="field">
-                <span>IMAP 主机</span>
-                <input id="cfgMailHost" type="text" placeholder="mail.example.com 或 imap.exmail.qq.com" />
+                <span>Coremail 网页地址 baseUrl</span>
+                <input id="cfgMailBaseUrl" type="text" placeholder="https://mail.company.com/coremail/" />
               </label>
               <label class="field">
-                <span>端口</span>
-                <input id="cfgMailPort" type="number" placeholder="993" />
-              </label>
-              <label class="field">
-                <span>账号（邮箱）</span>
-                <input id="cfgMailUser" type="text" placeholder="you@company.com" />
-              </label>
-              <label class="field">
-                <span>密码/授权码</span>
-                <input id="cfgMailPass" type="password" placeholder="邮箱密码或 IMAP 授权码" />
-              </label>
-              <label class="field checkbox">
-                <input id="cfgMailSecure" type="checkbox" />
-                <span>SSL/TLS（993 一般勾选）</span>
-              </label>
-              <label class="field checkbox">
-                <input id="cfgMailTlsStrict" type="checkbox" />
-                <span>校验证书（内网自签可关）</span>
+                <span>本机客户端 exe 路径</span>
+                <input id="cfgMailExe" type="text" placeholder="C:\Program Files\Coremail\Coremail.exe" />
               </label>
             </div>
-            <div class="row" style="margin-top:8px;">
-              <button id="btnMailTest" type="button" class="btn">测试收信连接</button>
+            <div class="row" style="margin-top:8px;gap:8px;">
+              <button id="btnMailPickExe" type="button" class="btn ghost">选择 exe</button>
+              <button id="btnMailTest" type="button" class="btn">检测客户端/会话</button>
               <span id="mailTestResult" class="muted"></span>
             </div>
             <p class="muted" style="margin:8px 0 0;font-size:12px;line-height:1.5;">
-              仅 IMAP 只读：列表/搜索/读正文，<strong>不发送、不删信</strong>。<br/>
-              Coremail 需在邮箱设置中开启 IMAP；主机端口以单位文档为准（常见 993+SSL）。
+              <strong>不使用 IMAP/POP3</strong>。通过本机 Coremail 客户端或已登录的网页界面列表/读信（只读）。<br/>
+              用法：1) 填写网页地址或 exe；2) 先登录邮箱；3) 对话中「列出最近邮件」「读第 1 封」。<br/>
+              浏览器请开启「保持会话」。界面结构不同时可在 config 里改 tools.mail.selectors。
             </p>
           </div>
 
           <div class="card">
-            <h2>下载目录</h2>
+            <h2>下载与截图目录</h2>
             <label class="field">
-              <span>下载保存路径（空= userData/downloads，建议设到桌面/文档下方便查看）</span>
+              <span>下载保存路径（空= userData/downloads）</span>
               <div class="row" style="gap:8px;">
                 <input id="cfgDownloadDir" type="text" placeholder="例如 D:\aihelper-downloads" style="flex:1;" />
                 <button id="btnPickDownloadDir" type="button" class="btn ghost">浏览</button>
                 <button id="btnOpenDownloadDir" type="button" class="btn ghost">打开</button>
               </div>
             </label>
+            <label class="field">
+              <span>截图保存路径（空= 图片\AIHelper-Screenshots）</span>
+              <div class="row" style="gap:8px;">
+                <input id="cfgScreenshotDir" type="text" placeholder="例如 D:\aihelper-shots 或 %USERPROFILE%\Pictures\AIHelper-Screenshots" style="flex:1;" />
+                <button id="btnPickScreenshotDir" type="button" class="btn ghost">浏览</button>
+                <button id="btnOpenScreenshotDir" type="button" class="btn ghost">打开</button>
+              </div>
+            </label>
+            <p class="muted" id="screenshotPathHint" style="margin:4px 0 8px;font-size:12px;"></p>
             <div class="grid-2">
               <label class="field checkbox">
                 <input id="cfgDownloadSkip" type="checkbox" />
@@ -266,7 +261,7 @@
               </label>
             </div>
             <p class="muted" style="margin:4px 0 0;font-size:12px;">
-              从 md 批量下文件请用 download_from_markdown；已下过的链接会跳过。浏览器里点的下载也会进此目录。
+              截图默认在「图片\AIHelper-Screenshots」。浏览器 download 与 download_file 进下载目录。保存配置后生效。
             </p>
           </div>
 

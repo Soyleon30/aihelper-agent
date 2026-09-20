@@ -75,13 +75,12 @@
     },
     "mail": {
       "enabled": true,
-      "host": "",
-      "port": 993,
-      "secure": true,
-      "user": "",
-      "password": "",
-      "folder": "INBOX",
-      "rejectUnauthorized": true
+      "mode": "client",
+      "baseUrl": "",
+      "exePath": "",
+      "timeoutMs": 60000,
+      "folder": "收件箱",
+      "selectors": {}
     },
     "browser": {
       "enabled": true,

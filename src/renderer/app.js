@@ -200,17 +200,15 @@
     $('cfgDownloadEnabled').checked = c.tools?.download?.enabled !== false;
     $('cfgDownloadDir').value =
       c.tools?.download?.dir || c.paths?.downloadDir || '';
+    $('cfgScreenshotDir').value =
+      c.tools?.browser?.screenshotDir || c.paths?.screenshotDir || '';
     $('cfgDownloadSkip').checked = c.tools?.download?.skipIfExists !== false;
     $('cfgDownloadDedupeHash').checked = c.tools?.download?.dedupeByHash !== false;
     const mail = c.tools?.mail || {};
     $('cfgMailEnabled').checked = mail.enabled !== false;
-    $('cfgMailHost').value = mail.host || '';
-    $('cfgMailPort').value = mail.port ?? 993;
-    $('cfgMailUser').value = mail.user || '';
-    $('cfgMailPass').value = mail.password || '';
-    $('cfgMailFolder').value = mail.folder || 'INBOX';
-    $('cfgMailSecure').checked = mail.secure !== false;
-    $('cfgMailTlsStrict').checked = mail.rejectUnauthorized !== false;
+    $('cfgMailBaseUrl').value = mail.baseUrl || mail.webmailUrl || '';
+    $('cfgMailExe').value = mail.exePath || '';
+    $('cfgMailFolder').value = mail.folder || '收件箱';
     $('cfgBrowserEnabled').checked = c.tools?.browser?.enabled !== false;
     $('cfgBrowserHeadless').checked = !!c.tools?.browser?.headless;
     $('cfgBrowserStealth').checked = c.tools?.browser?.stealth !== false;
@@ -268,15 +266,25 @@
     state.config.tools.download.dedupeByHash = $('cfgDownloadDedupeHash').checked;
     state.config.paths = state.config.paths || {};
     state.config.paths.downloadDir = state.config.tools.download.dir;
+    state.config.tools.browser = state.config.tools.browser || {};
+    state.config.tools.browser.screenshotDir = (
+      $('cfgScreenshotDir').value || ''
+    ).trim();
+    state.config.paths.screenshotDir = state.config.tools.browser.screenshotDir;
     state.config.tools.mail = state.config.tools.mail || {};
     state.config.tools.mail.enabled = $('cfgMailEnabled').checked;
-    state.config.tools.mail.host = ($('cfgMailHost').value || '').trim();
-    state.config.tools.mail.port = Number($('cfgMailPort').value) || 993;
-    state.config.tools.mail.user = ($('cfgMailUser').value || '').trim();
-    state.config.tools.mail.password = $('cfgMailPass').value || '';
-    state.config.tools.mail.folder = ($('cfgMailFolder').value || 'INBOX').trim() || 'INBOX';
-    state.config.tools.mail.secure = $('cfgMailSecure').checked;
-    state.config.tools.mail.rejectUnauthorized = $('cfgMailTlsStrict').checked;
+    state.config.tools.mail.mode = 'client';
+    state.config.tools.mail.baseUrl = ($('cfgMailBaseUrl').value || '').trim();
+    state.config.tools.mail.exePath = ($('cfgMailExe').value || '').trim();
+    state.config.tools.mail.folder =
+      ($('cfgMailFolder').value || '收件箱').trim() || '收件箱';
+    // 清除旧 IMAP 字段，避免误用
+    delete state.config.tools.mail.host;
+    delete state.config.tools.mail.port;
+    delete state.config.tools.mail.user;
+    delete state.config.tools.mail.password;
+    delete state.config.tools.mail.secure;
+    delete state.config.tools.mail.rejectUnauthorized;
     state.config.tools.browser.enabled = $('cfgBrowserEnabled').checked;
     state.config.tools.browser.downloadDir = state.config.tools.download.dir;
     state.config.tools.browser.headless = $('cfgBrowserHeadless').checked;
@@ -492,6 +500,11 @@
         hint.textContent += ` | 会话目录: ${paths.sessions}`;
       }
     }
+    if ($('screenshotPathHint')) {
+      $('screenshotPathHint').textContent = paths.screenshots
+        ? `当前截图目录: ${paths.screenshots}`
+        : '';
+    }
     const ver = await window.aihelper.getVersion();
     $('appVersion').textContent = `v${ver}`;
     scheduleAutosave();
@@ -510,19 +523,31 @@
     await window.aihelper.openLogDir();
   });
 
+  $('btnMailPickExe')?.addEventListener('click', async () => {
+    const p = await window.aihelper.selectFile([
+      { name: 'Executable', extensions: ['exe'] },
+      { name: 'All', extensions: ['*'] }
+    ]);
+    if (p) $('cfgMailExe').value = p;
+  });
+
   $('btnMailTest').addEventListener('click', async () => {
     const el = $('mailTestResult');
-    el.textContent = '测试中…';
+    el.textContent = '检测中…';
     el.style.color = 'var(--muted)';
     try {
       collectConfigFromForm();
       await window.aihelper.saveConfig(state.config);
       const r = await window.aihelper.mailTest();
       if (r.ok) {
-        el.textContent = `成功 · ${r.host} · 文件夹 ${r.folders?.length || 0} 个`;
+        const bits = [r.message || '可用'];
+        if (r.exePath) bits.push('客户端');
+        if (r.browser?.open) bits.push('网页会话');
+        if (r.baseUrl) bits.push(r.baseUrl);
+        el.textContent = bits.join(' · ').slice(0, 160);
         el.style.color = 'var(--ok)';
       } else {
-        el.textContent = `失败: ${r.error || 'unknown'}`;
+        el.textContent = `不可用: ${r.error || r.message || 'unknown'}`;
         el.style.color = 'var(--danger)';
       }
     } catch (err) {
@@ -543,6 +568,22 @@
       dir = paths.downloadsApp || paths.downloads || '';
     }
     if (dir) await window.aihelper.openPath(dir);
+  });
+
+  $('btnPickScreenshotDir').addEventListener('click', async () => {
+    const dir = await window.aihelper.selectDirectory();
+    if (dir) $('cfgScreenshotDir').value = dir;
+  });
+
+  $('btnOpenScreenshotDir').addEventListener('click', async () => {
+    let dir = ($('cfgScreenshotDir').value || '').trim();
+    if (!dir) {
+      const paths = await window.aihelper.getPaths();
+      dir = paths.screenshots || '';
+    }
+    if (dir) {
+      await window.aihelper.openPath(dir);
+    }
   });
 
   $('cfgActiveProvider').addEventListener('change', () => {

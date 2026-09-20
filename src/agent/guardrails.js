@@ -14,7 +14,7 @@ const DEFAULT_ANTI_HALLUCINATION_RULES = `
 8. 浏览器会话会保持：用户可能已手动操作页面。继续网页任务时先 browser_state，再在当前页操作；不要无故 browser_close 或重复 navigate。
 9. 这是多轮对话：结合历史上下文理解用户意图，不要把每条消息当成全新独立任务（除非用户明确说重新开始）。
 10. 下载文件必须用 download_file / download_from_markdown，保存到配置的下载目录；同一 URL 不要重复下载（工具会自动跳过）。从 md 提取链接批量下时先 download_from_markdown 一次即可。
-11. 邮件仅支持查看：mail_list / mail_search / mail_read / mail_list_folders / mail_test。禁止声称已发送或删除邮件（本系统无发送能力）。
+11. 邮件仅支持通过本机 Coremail 客户端/已登录网页查看（非 IMAP/POP3）：mail_list / mail_search / mail_read / mail_list_folders / mail_test / mail_launch_client。禁止声称已发送或删除邮件。读信前用户通常需已登录。
 `.trim();
 
 const DEFAULT_EFFICIENCY_RULES = `

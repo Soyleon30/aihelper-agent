@@ -37,6 +37,7 @@ function createToolRegistry(options = {}) {
       handlers,
       createMailTools({
         config: toolsCfg.mail || {},
+        userDataPath: options.userDataPath,
         logger: options.logger || null
       })
     );
@@ -47,7 +48,11 @@ function createToolRegistry(options = {}) {
       createBrowserTools({
         config: {
           ...(toolsCfg.browser || {}),
-          downloadDir: dlCfg.dir || pathsConfig.downloadDir || ''
+          downloadDir: dlCfg.dir || pathsConfig.downloadDir || '',
+          screenshotDir:
+            (toolsCfg.browser && toolsCfg.browser.screenshotDir) ||
+            pathsConfig.screenshotDir ||
+            ''
         },
         userDataPath: options.userDataPath,
         logger: options.logger || null

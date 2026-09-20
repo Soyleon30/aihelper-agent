@@ -2,6 +2,19 @@ const path = require('path');
 const fsp = require('fs').promises;
 const bs = require('./browser-session');
 
+function resolveScreenshotDir(cfg, userDataPath) {
+  const d = String(
+    (cfg && (cfg.screenshotDir || cfg.pathsScreenshotDir)) || ''
+  ).trim();
+  if (d) return path.resolve(d);
+  // 默认放到用户「图片」下，比 AppData 更好找
+  const pictures =
+    process.env.USERPROFILE
+      ? path.join(process.env.USERPROFILE, 'Pictures', 'AIHelper-Screenshots')
+      : path.join(userDataPath, 'screenshots');
+  return pictures;
+}
+
 function createBrowserTools(options = {}) {
   const cfg = options.config || {};
   const userDataPath = options.userDataPath || process.cwd();
@@ -479,18 +492,32 @@ function createBrowserTools(options = {}) {
       });
     },
 
+    async get_screenshot_dir() {
+      const dir = resolveScreenshotDir(cfg, userDataPath);
+      await fsp.mkdir(dir, { recursive: true });
+      return { dir, message: `截图目录: ${dir}` };
+    },
+
     async browser_screenshot(args) {
       return withStep('browser_screenshot', args, async () => {
         const p = await ensurePage();
-        const shotRoot = (cfg.screenshotDir || '').trim()
-          ? path.resolve(cfg.screenshotDir)
-          : path.join(userDataPath, 'screenshots');
-        const dir = shotRoot;
+        const dir = resolveScreenshotDir(cfg, userDataPath);
         await fsp.mkdir(dir, { recursive: true });
-        const file = args.path || path.join(dir, `shot-${Date.now()}.png`);
+        const file = args.path
+          ? path.isAbsolute(args.path)
+            ? args.path
+            : path.join(dir, args.path)
+          : path.join(dir, `shot-${Date.now()}.png`);
         await fsp.mkdir(path.dirname(path.resolve(file)), { recursive: true });
         await p.screenshot({ path: file, fullPage: !!args.fullPage });
-        const out = { path: path.resolve(file), url: p.url() };
+        const abs = path.resolve(file);
+        const out = {
+          ok: true,
+          path: abs,
+          dir,
+          url: p.url(),
+          message: `截图已保存: ${abs}`
+        };
         bs.logAction('page.screenshot', out);
         return out;
       });
@@ -545,4 +572,4 @@ function createBrowserTools(options = {}) {
   return tools;
 }
 
-module.exports = { createBrowserTools };
+module.exports = { createBrowserTools, resolveScreenshotDir };

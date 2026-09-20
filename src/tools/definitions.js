@@ -165,7 +165,16 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'mail_test',
-      description: '测试 Coremail/企业邮箱 IMAP 连接（只读，不发送）',
+      description:
+        '检测本机 Coremail 客户端/网页会话是否可用（不使用 IMAP/POP3，只读）',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mail_launch_client',
+      description: '启动本机已安装的 Coremail 客户端程序（需配置 exePath）',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -173,7 +182,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'mail_list_folders',
-      description: '列出邮箱文件夹（收件箱/已发送等）',
+      description: '从 Coremail 界面侧栏尝试列出文件夹名称',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -181,13 +190,14 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'mail_list',
-      description: '列出邮件（默认收件箱，新→旧）。只查看，不发送。',
+      description:
+        '通过本机 Coremail 客户端/已登录网页列出邮件（非 IMAP）。返回 id/index/subject/from。',
       parameters: {
         type: 'object',
         properties: {
-          folder: { type: 'string', description: '文件夹，默认 INBOX' },
-          limit: { type: 'number', description: '条数，默认 20，最大 100' },
-          unseenOnly: { type: 'boolean', description: '仅未读' }
+          folder: { type: 'string', description: '文件夹名，如 收件箱' },
+          limit: { type: 'number', description: '条数，默认 20，最大 50' },
+          unseenOnly: { type: 'boolean', description: '仅未读（尽力）' }
         }
       }
     }
@@ -196,18 +206,13 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'mail_search',
-      description: '按发件人/主题/关键字等搜索邮件（只读）',
+      description: '在 Coremail 界面搜索框搜索邮件（非 IMAP）',
       parameters: {
         type: 'object',
         properties: {
-          folder: { type: 'string' },
+          query: { type: 'string' },
           from: { type: 'string' },
-          to: { type: 'string' },
           subject: { type: 'string' },
-          query: { type: 'string', description: '正文关键字' },
-          since: { type: 'string', description: '起始日期 ISO' },
-          before: { type: 'string' },
-          unseenOnly: { type: 'boolean' },
           limit: { type: 'number' }
         }
       }
@@ -217,15 +222,16 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'mail_read',
-      description: '读取一封邮件正文（需 uid）。只读查看，不发送、不删信。',
+      description:
+        '在 Coremail 界面打开并读取一封邮件正文。用 mail_list 的 index 或 id。只读不发送。',
       parameters: {
         type: 'object',
         properties: {
-          uid: { type: 'number', description: 'mail_list 返回的 uid' },
-          folder: { type: 'string' },
+          index: { type: 'number', description: '列表序号，从 1 起' },
+          id: { type: 'string', description: '列表返回的 id' },
+          uid: { type: 'number', description: '兼容旧参数，等同 index' },
           maxChars: { type: 'number', description: '正文最大字符，默认 15000' }
-        },
-        required: ['uid']
+        }
       }
     }
   },
@@ -340,14 +346,23 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'browser_screenshot',
-      description: '截图并保存到本地',
+      description:
+        '截图并保存到配置的截图目录（默认 图片/AIHelper-Screenshots）。返回 path 绝对路径。',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: '保存路径，可选' },
+          path: { type: 'string', description: '可选：绝对路径或相对截图目录的文件名' },
           fullPage: { type: 'boolean' }
         }
       }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_screenshot_dir',
+      description: '返回当前截图保存目录的绝对路径',
+      parameters: { type: 'object', properties: {} }
     }
   },
   {
