@@ -1,0 +1,101 @@
+{
+  "name": "aihelper-agent",
+  "version": "1.0.0",
+  "description": "离线可用的 AI Agent：本地/API 模型、文件与网页自动化",
+  "main": "electron/main.js",
+  "author": "AI Helper",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "postinstall": "node scripts/ensure-playwright.js",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir",
+    "build:portable": "electron-builder --win portable",
+    "build:offline": "node scripts/build-offline.js",
+    "assemble:offline": "node scripts/assemble-offline.js",
+    "pack:offline": "node scripts/prepare-offline-bundle.js"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "imapflow": "^2.0.5",
+    "node-fetch": "^2.7.0",
+    "playwright": "^1.49.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.aihelper.agent",
+    "productName": "AIHelper Agent",
+    "copyright": "Copyright © AI Helper",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "config/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/.cache"
+    ],
+    "extraResources": [
+      {
+        "from": "config",
+        "to": "config"
+      },
+      {
+        "from": "offline-assets",
+        "to": "offline-assets",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/playwright/**/*",
+      "**/node_modules/playwright-core/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "requestedExecutionLevel": "asInvoker",
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false
+    },
+    "forceCodeSigning": false,
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AIHelper Agent",
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052",
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "electronDownload": {
+      "mirror": null
+    }
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "providers": {
+    "active": "local",
+    "local": {
+      "name": "本地模型",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "apiPath": "/chat/completions",
+      "apiKey": "ollama",
+      "model": "qwen2.5:7b",
+      "temperature": 0.2,
+      "maxTokens": 4096,
+      "timeoutMs": 120000
+    },
+    "openai": {
+      "name": "OpenAI 兼容 API",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiPath": "/chat/completions",
+      "apiKey": "",
+      "model": "gpt-4o-mini",
+      "temperature": 0.2,
+      "maxTokens": 4096,
+      "timeoutMs": 120000
+    },
+    "custom": {
+      "name": "自定义 API",
+      "baseUrl": "http://127.0.0.1:8000/v1",
+      "apiPath": "/chat/completions",
+      "apiKey": "",
+      "model": "default",
+      "temperature": 0.2,
+      "maxTokens": 4096,
+      "timeoutMs": 120000
+    }
+  },
+  "agent": {
+    "systemPrompt": "你是一个可操作本地文件与网页的智能助手。能力有限时必须承认；优先调用工具拿到真实结果，再简短用中文回答。",
+    "maxToolRounds": 0,
+    "maxHistoryTurns": 0,
+    "toolResultMaxLen": 6000,
+    "trimHistory": false,
+    "compactToolResults": false,
+    "parallelTools": false,
+    "skipDuplicateTools": false,
+    "efficiencyMode": false,
+    "forceFinalOnLastRound": false,
+    "roundBudgetHints": false,
+    "confirmDangerousOps": true,
+    "antiHallucination": true,
+    "forceToolsForActions": true,
+    "requireToolChoice": true,
+    "rejectUnverifiedAnswers": true,
+    "maxToolNudges": 2,
+    "verifyFinal": true,
+    "maxRechecks": 1,
+    "alwaysGroundFinal": false,
+    "temperatureHint": 0.2
+  },
+  "tools": {
+    "file": {
+      "enabled": true,
+      "allowedRoots": [],
+      "maxReadBytes": 2097152
+    },
+    "http": {
+      "enabled": true,
+      "timeoutMs": 30000,
+      "maxBodyBytes": 5242880
+    },
+    "download": {
+      "enabled": true,
+      "dir": "",
+      "skipIfExists": true,
+      "dedupeByHash": true,
+      "timeoutMs": 120000
+    },
+    "mail": {
+      "enabled": true,
+      "host": "",
+      "port": 993,
+      "secure": true,
+      "user": "",
+      "password": "",
+      "folder": "INBOX",
+      "rejectUnauthorized": true
+    },
+    "browser": {
+      "enabled": true,
+      "headless": false,
+      "timeoutMs": 30000,
+      "defaultViewport": { "width": 1366, "height": 768 },
+      "userDataDir": "",
+      "stealth": true,
+      "preferSystemBrowser": true,
+      "ignoreHTTPSErrors": true,
+      "locale": "zh-CN",
+      "timezoneId": "Asia/Shanghai",
+      "userAgent": "",
+      "noSandbox": false,
+      "keepSession": true,
+      "downloadDir": "",
+      "screenshotDir": ""
+    }
+  },
+  "paths": {
+    "downloadDir": "",
+    "screenshotDir": ""
+  },
+  "session": {
+    "enabled": true,
+    "autosaveMs": 15000,
+    "maxSessions": 50,
+    "maxMessagesPerSession": 200,
+    "dir": ""
+  },
+  "logging": {
+    "enabled": true,
+    "level": "info",
+    "dir": "",
+    "flushIntervalMs": 2000,
+    "maxFileBytes": 8388608,
+    "maxFiles": 14,
+    "maxFieldLen": 800,
+    "logChatContent": true,
+    "logConversations": true,
+    "maxChatContentLen": 8000,
+    "logToolArgs": true,
+    "logToolResult": true,
+    "logUiClicks": true,
+    "logBrowserActions": true
+  },
+  "ui": {
+    "theme": "dark",
+    "language": "zh-CN"
+  }
+}

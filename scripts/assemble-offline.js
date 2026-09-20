@@ -1,0 +1,121 @@
+/**
+ * 仅从已有 dist/win-unpacked 组装 dist-offline（不重新 electron-builder）
+ */
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+const root = path.join(__dirname, '..');
+const dist = path.join(root, 'dist');
+const outDir = path.join(root, 'dist-offline');
+const winUnpacked = path.join(dist, 'win-unpacked');
+const exeName = 'AIHelper Agent.exe';
+
+function ensureDir(p) {
+  fs.mkdirSync(p, { recursive: true });
+}
+
+function copyDir(src, dest) {
+  if (!fs.existsSync(src)) return;
+  fs.cpSync(src, dest, { recursive: true });
+}
+
+function main() {
+  if (!fs.existsSync(path.join(winUnpacked, exeName))) {
+    console.error('缺少 dist/win-unpacked/' + exeName);
+    console.error('请先: npx electron-builder --win --dir');
+    process.exit(1);
+  }
+
+  if (fs.existsSync(outDir)) {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+  ensureDir(outDir);
+
+  for (const name of fs.readdirSync(dist)) {
+    const full = path.join(dist, name);
+    if (fs.statSync(full).isFile() && /\.(exe|yml|yaml|blockmap)$/i.test(name)) {
+      fs.copyFileSync(full, path.join(outDir, name));
+    }
+  }
+
+  console.log('复制 win-unpacked …');
+  copyDir(winUnpacked, path.join(outDir, 'win-unpacked'));
+
+  const zipPath = path.join(outDir, 'AIHelper-Agent-1.0.0-win-x64-green.zip');
+  console.log('压缩 ZIP …');
+  try {
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    const src = path.join(outDir, 'win-unpacked', '*');
+    execSync(
+      `powershell -NoProfile -Command "Compress-Archive -Path '${path.join(outDir, 'win-unpacked')}\\*' -DestinationPath '${zipPath}' -Force"`,
+      { stdio: 'inherit' }
+    );
+  } catch (e) {
+    console.warn('ZIP 失败，可直接拷贝 win-unpacked:', e.message);
+  }
+
+  const home = process.env.USERPROFILE || '';
+  const pw = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(home, 'AppData', 'Local', 'ms-playwright');
+  if (fs.existsSync(pw)) {
+    const names = fs.readdirSync(pw);
+    if (names.some((n) => /chromium|chrome/i.test(n))) {
+      console.log('附带 browsers …');
+      copyDir(pw, path.join(outDir, 'browsers', 'ms-playwright'));
+    }
+  }
+
+  copyDir(path.join(root, 'config'), path.join(outDir, 'config-sample'));
+
+  const guide = `AIHelper Agent 离线部署
+
+【推荐】绿色版
+1. 解压 AIHelper-Agent-1.0.0-win-x64-green.zip 或复制 win-unpacked
+2. 运行 AIHelper Agent.exe
+3. 配置 → 设置本地模型或内网 API
+
+本地 Ollama:
+  Base URL: http://127.0.0.1:11434/v1
+  API Key: ollama
+  模型名: qwen2.5:7b（按实际）
+
+构建时间: ${new Date().toISOString()}
+`;
+  fs.writeFileSync(path.join(outDir, '离线部署说明.txt'), guide, 'utf8');
+
+  fs.writeFileSync(
+    path.join(outDir, '启动绿色版.bat'),
+    [
+      '@echo off',
+      'chcp 65001 >nul',
+      'cd /d "%~dp0"',
+      'start "" "win-unpacked\\AIHelper Agent.exe"'
+    ].join('\r\n'),
+    'utf8'
+  );
+
+  fs.writeFileSync(
+    path.join(outDir, '安装浏览器缓存.bat'),
+    [
+      '@echo off',
+      'chcp 65001 >nul',
+      'set SRC=%~dp0browsers\\ms-playwright',
+      'set DEST=%LOCALAPPDATA%\\ms-playwright',
+      'if not exist "%SRC%" (',
+      '  echo 未找到 browsers，可改用系统 Chrome/Edge',
+      '  pause',
+      '  exit /b 1',
+      ')',
+      'xcopy /E /I /Y "%SRC%" "%DEST%"',
+      'echo 完成',
+      'pause'
+    ].join('\r\n'),
+    'utf8'
+  );
+
+  console.log('=== 完成 ===');
+  console.log(outDir);
+  console.log(fs.readdirSync(outDir).join('\n'));
+}
+
+main();

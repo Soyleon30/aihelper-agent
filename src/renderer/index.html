@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIHelper Agent</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div>
+          <div class="title">AIHelper Agent</div>
+          <div class="subtitle" id="appVersion">v1.0.0</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-view="chat">对话</button>
+        <button class="nav-btn" data-view="config">配置</button>
+        <button class="nav-btn" data-view="tools">工具说明</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="status-dot" id="providerStatus"></div>
+        <span id="providerLabel">本地模型</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section id="view-chat" class="view active">
+        <header class="topbar">
+          <h1>智能助手</h1>
+          <div class="top-actions">
+            <select id="sessionSelect" class="session-select" title="多轮对话会话"></select>
+            <button id="btnNewSession" class="btn ghost" title="新建对话">新对话</button>
+            <button id="btnSaveSession" class="btn ghost" title="立即保存到文件">保存</button>
+            <button id="btnCopyAll" class="btn ghost" title="复制全部对话">复制全部</button>
+            <button id="btnClear" class="btn ghost">清空本对话</button>
+            <button id="btnAbort" class="btn danger" disabled>停止</button>
+          </div>
+        </header>
+        <div id="sessionBar" class="session-bar">
+          <span id="sessionTitle" class="muted">会话加载中…</span>
+          <span id="sessionSaveHint" class="muted"></span>
+        </div>
+        <div id="messages" class="messages"></div>
+        <div id="tracePanel" class="trace-panel hidden"></div>
+        <footer class="composer">
+          <textarea id="input" rows="3" placeholder="多轮对话：可接着上一句继续说。浏览器会保持当前页面，你可手动操作后再让助手继续…"></textarea>
+          <div class="composer-actions">
+            <div class="hint">多轮上下文 · 会话自动存盘 · 浏览器会话保持（可人工操作后继续）</div>
+            <button id="btnSend" class="btn primary">发送</button>
+          </div>
+        </footer>
+      </section>
+
+      <section id="view-config" class="view">
+        <header class="topbar">
+          <h1>配置</h1>
+          <div class="top-actions">
+            <button id="btnResetConfig" class="btn ghost">恢复默认</button>
+            <button id="btnSaveConfig" class="btn primary">保存</button>
+          </div>
+        </header>
+        <div class="config-scroll">
+          <div class="card">
+            <h2>模型提供商</h2>
+            <label class="field">
+              <span>当前提供商</span>
+              <select id="cfgActiveProvider">
+                <option value="local">本地模型 (Ollama / 本地 OpenAI 兼容)</option>
+                <option value="openai">OpenAI 兼容 API</option>
+                <option value="custom">自定义 API</option>
+              </select>
+            </label>
+            <div class="grid-2">
+              <label class="field">
+                <span>Base URL</span>
+                <input id="cfgBaseUrl" type="text" placeholder="http://127.0.0.1:11434/v1" />
+              </label>
+              <label class="field">
+                <span>接口路径 apiPath</span>
+                <input id="cfgApiPath" type="text" placeholder="/chat/completions" />
+              </label>
+              <label class="field">
+                <span>API Key</span>
+                <input id="cfgApiKey" type="password" placeholder="可为空" />
+              </label>
+              <label class="field">
+                <span>模型名</span>
+                <input id="cfgModel" type="text" placeholder="qwen2.5:7b" />
+              </label>
+              <label class="field">
+                <span>Temperature</span>
+                <input id="cfgTemperature" type="number" min="0" max="2" step="0.1" />
+              </label>
+              <label class="field">
+                <span>Max Tokens</span>
+                <input id="cfgMaxTokens" type="number" min="256" max="128000" step="1" />
+              </label>
+              <label class="field">
+                <span>超时 (ms)</span>
+                <input id="cfgTimeout" type="number" min="5000" step="1000" />
+              </label>
+            </div>
+            <div class="row">
+              <button id="btnTestProvider" class="btn">测试连接</button>
+              <span id="testResult" class="muted"></span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Agent</h2>
+            <label class="field">
+              <span>系统提示词</span>
+              <textarea id="cfgSystemPrompt" rows="4"></textarea>
+            </label>
+            <div class="grid-2">
+              <label class="field">
+                <span>最大工具轮次（0=不限制）</span>
+                <input id="cfgMaxRounds" type="number" min="0" max="9999" step="1" />
+              </label>
+              <label class="field">
+                <span>历史对话轮数（0=不限制）</span>
+                <input id="cfgMaxHistory" type="number" min="0" max="9999" step="1" />
+              </label>
+              <label class="field">
+                <span>工具结果最大字符（压缩开启时）</span>
+                <input id="cfgToolResultMax" type="number" min="0" max="500000" step="100" />
+              </label>
+              <label class="field">
+                <span>最大复核次数</span>
+                <input id="cfgMaxRechecks" type="number" min="0" max="3" />
+              </label>
+              <label class="field checkbox">
+                <input id="cfgConfirmDanger" type="checkbox" />
+                <span>危险操作确认（预留）</span>
+              </label>
+            </div>
+            <h3 style="margin:12px 0 8px;font-size:13px;color:var(--muted);font-weight:600;">可靠性（可单独开关）</h3>
+            <div class="grid-2">
+              <label class="field checkbox">
+                <input id="cfgAntiHallucination" type="checkbox" />
+                <span>反幻觉护栏</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgForceTools" type="checkbox" />
+                <span>操作类任务强制先调工具</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgRequireToolChoice" type="checkbox" />
+                <span>首轮强制 tool_choice=required</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgRejectUnverified" type="checkbox" />
+                <span>拒绝无工具的虚假结论</span>
+              </label>
+              <label class="field">
+                <span>偷懒打回次数</span>
+                <input id="cfgMaxNudges" type="number" min="0" max="5" />
+              </label>
+              <label class="field checkbox">
+                <input id="cfgVerifyFinal" type="checkbox" />
+                <span>可疑结论自动复核</span>
+              </label>
+            </div>
+            <h3 style="margin:12px 0 8px;font-size:13px;color:var(--muted);font-weight:600;">省轮次（可单独开关，不关闭上面能力）</h3>
+            <div class="grid-2">
+              <label class="field checkbox">
+                <input id="cfgEfficiency" type="checkbox" />
+                <span>效率提示词（鼓励并行/少废话）</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgForceFinalLast" type="checkbox" />
+                <span>最后一轮强制收尾</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgRoundBudget" type="checkbox" />
+                <span>轮次紧张时注入提示</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgParallelTools" type="checkbox" />
+                <span>同轮工具并行执行</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgSkipDupTools" type="checkbox" />
+                <span>跳过重复工具调用</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgTrimHistory" type="checkbox" />
+                <span>裁剪历史（需同时设历史轮数&gt;0）</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgCompactResults" type="checkbox" />
+                <span>压缩工具回传结果</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Coremail 邮件（仅查看）</h2>
+            <div class="grid-2">
+              <label class="field checkbox">
+                <input id="cfgMailEnabled" type="checkbox" />
+                <span>启用邮件查看</span>
+              </label>
+              <label class="field">
+                <span>默认文件夹</span>
+                <input id="cfgMailFolder" type="text" placeholder="INBOX" />
+              </label>
+              <label class="field">
+                <span>IMAP 主机</span>
+                <input id="cfgMailHost" type="text" placeholder="mail.example.com 或 imap.exmail.qq.com" />
+              </label>
+              <label class="field">
+                <span>端口</span>
+                <input id="cfgMailPort" type="number" placeholder="993" />
+              </label>
+              <label class="field">
+                <span>账号（邮箱）</span>
+                <input id="cfgMailUser" type="text" placeholder="you@company.com" />
+              </label>
+              <label class="field">
+                <span>密码/授权码</span>
+                <input id="cfgMailPass" type="password" placeholder="邮箱密码或 IMAP 授权码" />
+              </label>
+              <label class="field checkbox">
+                <input id="cfgMailSecure" type="checkbox" />
+                <span>SSL/TLS（993 一般勾选）</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgMailTlsStrict" type="checkbox" />
+                <span>校验证书（内网自签可关）</span>
+              </label>
+            </div>
+            <div class="row" style="margin-top:8px;">
+              <button id="btnMailTest" type="button" class="btn">测试收信连接</button>
+              <span id="mailTestResult" class="muted"></span>
+            </div>
+            <p class="muted" style="margin:8px 0 0;font-size:12px;line-height:1.5;">
+              仅 IMAP 只读：列表/搜索/读正文，<strong>不发送、不删信</strong>。<br/>
+              Coremail 需在邮箱设置中开启 IMAP；主机端口以单位文档为准（常见 993+SSL）。
+            </p>
+          </div>
+
+          <div class="card">
+            <h2>下载目录</h2>
+            <label class="field">
+              <span>下载保存路径（空= userData/downloads，建议设到桌面/文档下方便查看）</span>
+              <div class="row" style="gap:8px;">
+                <input id="cfgDownloadDir" type="text" placeholder="例如 D:\aihelper-downloads" style="flex:1;" />
+                <button id="btnPickDownloadDir" type="button" class="btn ghost">浏览</button>
+                <button id="btnOpenDownloadDir" type="button" class="btn ghost">打开</button>
+              </div>
+            </label>
+            <div class="grid-2">
+              <label class="field checkbox">
+                <input id="cfgDownloadSkip" type="checkbox" />
+                <span>相同 URL 跳过重复下载</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgDownloadDedupeHash" type="checkbox" />
+                <span>相同文件内容去重（hash）</span>
+              </label>
+            </div>
+            <p class="muted" style="margin:4px 0 0;font-size:12px;">
+              从 md 批量下文件请用 download_from_markdown；已下过的链接会跳过。浏览器里点的下载也会进此目录。
+            </p>
+          </div>
+
+          <div class="card">
+            <h2>工具</h2>
+            <div class="grid-2">
+              <label class="field checkbox">
+                <input id="cfgFileEnabled" type="checkbox" />
+                <span>启用本地文件</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgHttpEnabled" type="checkbox" />
+                <span>启用 HTTP 请求</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgDownloadEnabled" type="checkbox" />
+                <span>启用下载工具</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgBrowserEnabled" type="checkbox" />
+                <span>启用浏览器自动化</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgBrowserHeadless" type="checkbox" />
+                <span>浏览器无头模式</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgBrowserStealth" type="checkbox" />
+                <span>隐蔽模式（降自动化/DevTools 检测）</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgBrowserSystem" type="checkbox" />
+                <span>优先使用本机 Chrome/Edge</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgBrowserKeep" type="checkbox" />
+                <span>保持浏览器会话（人工操作后可继续）</span>
+              </label>
+            </div>
+            <p class="muted" style="margin:4px 0 0;font-size:12px;">
+              保持会话开启时，对话切换/配置保存不会关闭页面；你可手动点网页，再让助手 browser_state 后继续操作。仅 browser_close 或退出应用才关闭。
+            </p>
+            <label class="field">
+              <span>文件允许根目录（每行一个，空=不限制）</span>
+              <textarea id="cfgAllowedRoots" rows="4" placeholder="D:\work&#10;C:\Users\Public\Documents"></textarea>
+            </label>
+            <p class="muted" style="margin:4px 0 0;font-size:12px;line-height:1.5;">
+              写法：直接 <code>D:\work</code>，不要故意写双斜杠。<br/>
+              权限：只加最外层即可，例如允许 <code>D:\work</code> 则 <code>D:\work\a\b</code> 自动可用，不必再给子目录单独加。<br/>
+              反过来：只加了 <code>D:\work\a\b</code> 时，不能访问上级 <code>D:\work</code>（更窄的白名单）。
+            </p>
+            <div class="row" style="margin-top:8px;">
+              <button id="btnAddRoot" class="btn ghost">添加目录</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>日志</h2>
+            <div class="grid-2">
+              <label class="field checkbox">
+                <input id="cfgLogEnabled" type="checkbox" />
+                <span>启用操作/使用日志</span>
+              </label>
+              <label class="field">
+                <span>日志级别</span>
+                <select id="cfgLogLevel">
+                  <option value="error">error</option>
+                  <option value="warn">warn</option>
+                  <option value="info">info</option>
+                  <option value="debug">debug</option>
+                </select>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgLogChatContent" type="checkbox" />
+                <span>记录对话正文（chats-*.jsonl）</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgLogToolArgs" type="checkbox" />
+                <span>记录工具参数</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgLogToolResult" type="checkbox" />
+                <span>记录工具结果摘要</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgLogUiClicks" type="checkbox" />
+                <span>记录应用内点击操作</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgLogBrowserActions" type="checkbox" />
+                <span>记录浏览器页面操作过程</span>
+              </label>
+            </div>
+            <label class="field" style="margin-top:10px;">
+              <span>日志目录（空=默认 userData/logs）</span>
+              <div class="row" style="gap:8px;">
+                <input id="cfgLogDir" type="text" placeholder="例如 D:\logs\aihelper" style="flex:1;" />
+                <button id="btnPickLogDir" type="button" class="btn ghost">浏览</button>
+                <button id="btnClearLogDir" type="button" class="btn ghost">默认</button>
+              </div>
+            </label>
+            <p class="muted" id="logPathHint" style="margin:8px 0 0;font-size:12px;"></p>
+            <div class="row" style="margin-top:10px;">
+              <button id="btnOpenLogs" class="btn ghost">打开日志目录</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>路径信息</h2>
+            <pre id="pathInfo" class="code-block"></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-tools" class="view">
+        <header class="topbar">
+          <h1>工具说明</h1>
+        </header>
+        <div class="config-scroll">
+          <div class="card">
+            <h2>本地文件</h2>
+            <ul class="list">
+              <li><code>list_dir</code> 列目录</li>
+              <li><code>read_file</code> / <code>write_file</code> / <code>append_file</code></li>
+              <li><code>delete_path</code> 删除文件或空目录</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h2>HTTP</h2>
+            <ul class="list">
+              <li><code>http_request</code> 支持 GET/POST/PUT/DELETE，JSON / 表单 body</li>
+              <li>适合调用内网 API、提交表单、webhook</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h2>浏览器</h2>
+            <ul class="list">
+              <li><code>browser_navigate</code> 打开网页</li>
+              <li><code>browser_click</code> / <code>browser_type</code> / <code>browser_fill_form</code> 登录与填写</li>
+              <li><code>browser_get_text</code> / <code>browser_screenshot</code> 读取与截图</li>
+              <li>优先使用本机 Chrome/Edge；也可使用打包的 Chromium</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h2>离线部署</h2>
+            <ol class="list">
+              <li>在有网环境：<code>npm install</code> → <code>npx playwright install chromium</code></li>
+              <li>执行 <code>npm run build:offline</code> 生成离线安装包</li>
+              <li>将 <code>dist-offline</code> 整目录拷到无网机器安装/运行</li>
+              <li>无网机器需自备本地模型（如 Ollama）或可达的内网 API</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

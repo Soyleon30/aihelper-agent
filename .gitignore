@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-offline/
+offline-cache/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+out/
+playwright-report/
+test-results/
+*.exe
+*.blockmap
