@@ -42,17 +42,26 @@ function main() {
   console.log('复制 win-unpacked …');
   copyDir(winUnpacked, path.join(outDir, 'win-unpacked'));
 
-  const zipPath = path.join(outDir, 'AIHelper-Agent-1.0.0-win-x64-green.zip');
-  console.log('压缩 ZIP …');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const ver = pkg.version || '0.0.0';
+  const zipName = `AIHelper-Agent-${ver}-win-x64-green.zip`;
+  const zipPath = path.join(outDir, zipName);
+  console.log('压缩 ZIP …', zipName);
   try {
     if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-    const src = path.join(outDir, 'win-unpacked', '*');
     execSync(
-      `powershell -NoProfile -Command "Compress-Archive -Path '${path.join(outDir, 'win-unpacked')}\\*' -DestinationPath '${zipPath}' -Force"`,
+      `tar -a -c -f "${zipPath}" -C "${path.join(outDir, 'win-unpacked')}" .`,
       { stdio: 'inherit' }
     );
   } catch (e) {
-    console.warn('ZIP 失败，可直接拷贝 win-unpacked:', e.message);
+    try {
+      execSync(
+        `powershell -NoProfile -Command "Compress-Archive -Path '${path.join(outDir, 'win-unpacked')}\\*' -DestinationPath '${zipPath}' -Force"`,
+        { stdio: 'inherit' }
+      );
+    } catch (e2) {
+      console.warn('ZIP 失败，可直接拷贝 win-unpacked:', e2.message);
+    }
   }
 
   const home = process.env.USERPROFILE || '';
@@ -67,10 +76,10 @@ function main() {
 
   copyDir(path.join(root, 'config'), path.join(outDir, 'config-sample'));
 
-  const guide = `AIHelper Agent 离线部署
+  const guide = `AIHelper Agent 离线部署 (v${ver})
 
 【推荐】绿色版
-1. 解压 AIHelper-Agent-1.0.0-win-x64-green.zip 或复制 win-unpacked
+1. 解压 ${zipName} 或复制 win-unpacked
 2. 运行 AIHelper Agent.exe
 3. 配置 → 设置本地模型或内网 API
 

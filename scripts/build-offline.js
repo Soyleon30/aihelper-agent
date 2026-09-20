@@ -111,13 +111,21 @@ function main() {
   console.log('复制绿色版 win-unpacked …');
   copyDir(winUnpacked, path.join(outDir, 'win-unpacked'));
 
-  // ZIP 绿色版（无网环境直接解压即用）
-  const zipPath = path.join(outDir, 'AIHelper-Agent-1.0.0-win-x64-green.zip');
-  console.log('压缩绿色版 ZIP …');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const ver = pkg.version || '0.0.0';
+  const zipName = `AIHelper-Agent-${ver}-win-x64-green.zip`;
+  const zipPath = path.join(outDir, zipName);
+  console.log('压缩绿色版 ZIP …', zipName);
   try {
     zipDir(path.join(outDir, 'win-unpacked'), zipPath);
   } catch (e) {
-    console.warn('ZIP 压缩失败，仍可直接拷贝 win-unpacked 目录:', e.message);
+    try {
+      execSync(`tar -a -c -f "${zipPath}" -C "${path.join(outDir, 'win-unpacked')}" .`, {
+        stdio: 'inherit'
+      });
+    } catch (e2) {
+      console.warn('ZIP 压缩失败，仍可直接拷贝 win-unpacked 目录:', e2.message);
+    }
   }
 
   // Playwright 浏览器
@@ -142,10 +150,10 @@ function main() {
 
   copyDir(path.join(root, 'config'), path.join(outDir, 'config-sample'));
 
-  const guide = `# AIHelper Agent 离线部署指南
+  const guide = `# AIHelper Agent 离线部署指南 (v${ver})
 
 ## 推荐方式（绿色版，无需安装）
-1. 解压 AIHelper-Agent-1.0.0-win-x64-green.zip
+1. 解压 ${zipName}
    或直接复制 win-unpacked 整个文件夹
 2. 运行 "AIHelper Agent.exe"
 3. 打开「配置」设置本地模型或内网 API
