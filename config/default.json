@@ -125,7 +125,14 @@
     "logToolArgs": true,
     "logToolResult": true,
     "logUiClicks": true,
-    "logBrowserActions": true
+    "logBrowserActions": true,
+    "redact": true,
+    "redactEmails": true,
+    "redactPhones": true,
+    "redactIds": false,
+    "redactMask": "***",
+    "redactExtraKeys": [],
+    "redactExtraPatterns": []
   },
   "ui": {
     "theme": "dark",

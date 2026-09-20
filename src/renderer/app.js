@@ -225,6 +225,10 @@
     $('cfgLogToolResult').checked = lg.logToolResult !== false;
     $('cfgLogUiClicks').checked = lg.logUiClicks !== false;
     $('cfgLogBrowserActions').checked = lg.logBrowserActions !== false;
+    $('cfgLogRedact').checked = lg.redact !== false;
+    $('cfgLogRedactEmail').checked = lg.redactEmails !== false;
+    $('cfgLogRedactPhone').checked = lg.redactPhones !== false;
+    $('cfgLogRedactId').checked = lg.redactIds === true;
     updateProviderLabel();
   }
 
@@ -316,6 +320,10 @@
     state.config.logging.logToolResult = $('cfgLogToolResult').checked;
     state.config.logging.logUiClicks = $('cfgLogUiClicks').checked;
     state.config.logging.logBrowserActions = $('cfgLogBrowserActions').checked;
+    state.config.logging.redact = $('cfgLogRedact').checked;
+    state.config.logging.redactEmails = $('cfgLogRedactEmail').checked;
+    state.config.logging.redactPhones = $('cfgLogRedactPhone').checked;
+    state.config.logging.redactIds = $('cfgLogRedactId').checked;
     return state.config;
   }
 

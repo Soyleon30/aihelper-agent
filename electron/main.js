@@ -44,7 +44,14 @@ function ensureUserConfig() {
           'logBrowserActions',
           'logChatContent',
           'logConversations',
-          'maxChatContentLen'
+          'maxChatContentLen',
+          'redact',
+          'redactEmails',
+          'redactPhones',
+          'redactIds',
+          'redactMask',
+          'redactExtraKeys',
+          'redactExtraPatterns'
         ]) {
           if (cur.logging[k] === undefined && def.logging[k] !== undefined) {
             cur.logging[k] = def.logging[k];

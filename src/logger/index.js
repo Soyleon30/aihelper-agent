@@ -6,8 +6,8 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { createRedactor } = require('./redact');
 
-const SENSITIVE_KEYS = /^(apiKey|api_key|authorization|password|passwd|token|secret|cookie)$/i;
 const DEFAULTS = {
   enabled: true,
   level: 'info',
@@ -25,7 +25,14 @@ const DEFAULTS = {
   logUiClicks: true,
   logBrowserActions: true,
   actionFlushIntervalMs: 1500,
-  maxActionQueue: 300
+  maxActionQueue: 300,
+  redact: true,
+  redactEmails: true,
+  redactPhones: true,
+  redactIds: false,
+  redactMask: '***',
+  redactExtraKeys: [],
+  redactExtraPatterns: []
 };
 
 const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
@@ -33,6 +40,7 @@ const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
 function createLogger(options = {}) {
   let cfg = { ...DEFAULTS, ...(options.config || {}) };
   const userDataPath = options.userDataPath || process.cwd();
+  let redactor = buildRedactor(cfg);
   let queue = [];
   let actionQueue = [];
   let writing = false;
@@ -46,6 +54,18 @@ function createLogger(options = {}) {
   let actionDate = '';
   let actionFile = '';
   let actionSize = 0;
+
+  function buildRedactor(c) {
+    return createRedactor({
+      enabled: c.redact !== false,
+      mask: c.redactMask || '***',
+      redactEmails: c.redactEmails !== false,
+      redactPhones: c.redactPhones !== false,
+      redactIds: c.redactIds === true,
+      extraKeys: c.redactExtraKeys || [],
+      extraPatterns: c.redactExtraPatterns || []
+    });
+  }
 
   function logDir() {
     if (cfg.dir) return cfg.dir;
@@ -79,35 +99,8 @@ function createLogger(options = {}) {
     return currentFile;
   }
 
-  function truncate(v, max) {
-    if (v == null) return v;
-    if (typeof v === 'string') {
-      return v.length > max ? v.slice(0, max) + `…(+${v.length - max})` : v;
-    }
-    if (typeof v === 'number' || typeof v === 'boolean') return v;
-    if (Array.isArray(v)) {
-      const out = v.slice(0, 20).map((x) => truncate(x, max));
-      if (v.length > 20) out.push(`…(+${v.length - 20} items)`);
-      return out;
-    }
-    if (typeof v === 'object') {
-      const out = {};
-      let n = 0;
-      for (const [k, val] of Object.entries(v)) {
-        if (n++ >= 30) {
-          out._more = true;
-          break;
-        }
-        if (SENSITIVE_KEYS.test(k)) {
-          out[k] = '***';
-          continue;
-        }
-        out[k] = truncate(val, max);
-      }
-      return out;
-    }
-    const s = String(v);
-    return s.length > max ? s.slice(0, max) + '…' : s;
+  function sanitize(v, max) {
+    return redactor.redact(v, max);
   }
 
   function shouldLog(level) {
@@ -133,7 +126,7 @@ function createLogger(options = {}) {
       t: new Date().toISOString(),
       level,
       event,
-      data: data != null ? truncate(data, max) : undefined
+      data: data != null ? sanitize(data, max) : undefined
     });
   }
 
@@ -228,7 +221,7 @@ function createLogger(options = {}) {
       const row = JSON.stringify({
         t: new Date().toISOString(),
         event,
-        data: data != null ? truncate(data, cfg.maxFieldLen || 800) : undefined
+        data: data != null ? sanitize(data, cfg.maxFieldLen || 800) : undefined
       });
       fs.appendFile(file, row + '\n', () => {});
     } catch (_) {}
@@ -246,8 +239,8 @@ function createLogger(options = {}) {
       const file = path.join(logDir(), `chats-${dayStamp()}.jsonl`);
       const max = cfg.maxChatContentLen || 8000;
       let content = entry?.content;
-      if (typeof content === 'string' && content.length > max) {
-        content = content.slice(0, max) + `…(+${content.length - max})`;
+      if (typeof content === 'string') {
+        content = sanitize(content, max);
       }
       const row = {
         t: new Date().toISOString(),
@@ -256,7 +249,7 @@ function createLogger(options = {}) {
         content,
         meta:
           entry?.meta != null
-            ? truncate(entry.meta, cfg.maxFieldLen || 800)
+            ? sanitize(entry.meta, cfg.maxFieldLen || 800)
             : undefined
       };
       fs.appendFile(file, JSON.stringify(row) + '\n', () => {});
@@ -293,7 +286,7 @@ function createLogger(options = {}) {
       t: new Date().toISOString(),
       kind: kind || 'action',
       event,
-      data: data != null ? truncate(data, cfg.maxFieldLen || 800) : undefined
+      data: data != null ? sanitize(data, cfg.maxFieldLen || 800) : undefined
     });
   }
 
@@ -339,7 +332,11 @@ function createLogger(options = {}) {
       file: currentFile || resolveFile(),
       actionFile: actionFile || resolveActionFile(),
       logUiClicks: cfg.logUiClicks !== false,
-      logBrowserActions: cfg.logBrowserActions !== false
+      logBrowserActions: cfg.logBrowserActions !== false,
+      redact: cfg.redact !== false,
+      redactEmails: cfg.redactEmails !== false,
+      redactPhones: cfg.redactPhones !== false,
+      redactIds: cfg.redactIds === true
     };
   }
 
@@ -361,6 +358,7 @@ function createLogger(options = {}) {
     const prevDir = logDir();
     cfg = { ...cfg, ...(next || {}) };
     if (cfg.dir) cfg.dir = String(cfg.dir).trim();
+    redactor = buildRedactor(cfg);
     // 目录变更时切换文件句柄状态
     if (logDir() !== prevDir) {
       currentDate = '';

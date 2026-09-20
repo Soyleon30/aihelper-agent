@@ -354,7 +354,26 @@
                 <input id="cfgLogBrowserActions" type="checkbox" />
                 <span>记录浏览器页面操作过程</span>
               </label>
+              <label class="field checkbox">
+                <input id="cfgLogRedact" type="checkbox" />
+                <span>日志脱敏（密码/Token/密钥）</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgLogRedactEmail" type="checkbox" />
+                <span>脱敏邮箱地址</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgLogRedactPhone" type="checkbox" />
+                <span>脱敏手机号</span>
+              </label>
+              <label class="field checkbox">
+                <input id="cfgLogRedactId" type="checkbox" />
+                <span>脱敏身份证号</span>
+              </label>
             </div>
+            <p class="muted" style="margin:6px 0 0;font-size:12px;">
+              脱敏后日志更适合对外发送：apiKey/password/Bearer/JWT 等会替换为 ***。
+            </p>
             <label class="field" style="margin-top:10px;">
               <span>日志目录（空=默认 userData/logs）</span>
               <div class="row" style="gap:8px;">
