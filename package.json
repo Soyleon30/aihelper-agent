@@ -1,6 +1,6 @@
 {
   "name": "aihelper-agent",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "description": "离线可用的 AI Agent：本地/API 模型、文件与网页自动化",
   "main": "electron/main.js",
   "author": "AI Helper",
@@ -10,10 +10,11 @@
     "dev": "electron . --dev",
     "postinstall": "node scripts/ensure-playwright.js",
     "build": "electron-builder --win",
-    "build:dir": "electron-builder --win --dir",
+    "build:dir": "node scripts/build-offline.js --dir-only",
     "build:portable": "electron-builder --win portable",
     "build:offline": "node scripts/build-offline.js",
     "assemble:offline": "node scripts/assemble-offline.js",
+    "build:nsis": "node -e \"process.env.BUILD_NSIS='1';require('./scripts/build-offline.js')\"",
     "pack:offline": "node scripts/prepare-offline-bundle.js"
   },
   "dependencies": {

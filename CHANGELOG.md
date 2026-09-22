@@ -6,12 +6,17 @@
 
 ---
 
+## [1.6.4] — 2026-09-22
+
+### 打包：exe 被占用导致 UNKNOWN open
+- `build-offline` 打包前结束占用 `AIHelper Agent.exe` / electron 的进程，并改名旧 `dist/win-unpacked`
+- 默认跳过 NSIS/portable（常因网络失败）；需要时 `set BUILD_NSIS=1`
+- `assemble-offline` 校验 asar 版本与 package.json 一致，避免 zip 名新、内容仍 1.4.0
+
 ## [1.6.3] — 2026-09-22
 
 ### 浏览器登录可保留（非无痕）
-- 默认使用持久配置档：`userData/browser-profile`（`launchPersistentContext`）
-- 设置可填「浏览器用户数据目录」；勾选「每次无痕」则仍临时配置
-- **不要**填正在使用的系统 Chrome/Edge 用户目录（会冲突）；Agent 用独立目录即可保留登录
+- 默认持久配置档 `browser-profile`；设置可无痕 / 自定义 userDataDir
 
 ## [1.6.2] — 2026-09-22
 

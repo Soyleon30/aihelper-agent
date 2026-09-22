@@ -50,8 +50,58 @@ function zipDir(srcDir, zipPath) {
   execSync(`powershell -NoProfile -Command "${ps}"`, { stdio: 'inherit', cwd: root });
 }
 
+function killLockingProcesses() {
+  // electron-builder 写 asar integrity 时会打开 AIHelper Agent.exe；若进程/资源管理器占用会 UNKNOWN open 失败
+  console.log('释放可能占用 dist 的进程…');
+  const killers = [
+    `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'AIHelper|electron' -or ($_.ExecutablePath -and $_.ExecutablePath -like '*aihelper_grok*dist*') } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }"`,
+    `taskkill /F /IM "AIHelper Agent.exe" /T`,
+    `taskkill /F /IM electron.exe /T`
+  ];
+  for (const cmd of killers) {
+    try {
+      execSync(cmd, { stdio: 'ignore', cwd: root, windowsHide: true });
+    } catch (_) {}
+  }
+}
+
+function clearWinUnpacked() {
+  const winUnpacked = path.join(dist, 'win-unpacked');
+  if (!fs.existsSync(winUnpacked)) return;
+  const bak = path.join(dist, `win-unpacked-old-${Date.now()}`);
+  try {
+    fs.renameSync(winUnpacked, bak);
+    console.log('旧 dist/win-unpacked 已改名:', path.basename(bak));
+  } catch (e) {
+    console.warn('无法改名 win-unpacked（可能仍被占用）:', e.message);
+    console.warn('请关闭所有 AIHelper / 从 dist 打开的 exe，关闭资源管理器中该文件夹后重试');
+    try {
+      fs.rmSync(winUnpacked, { recursive: true, force: true });
+    } catch (e2) {
+      console.error('无法删除 dist/win-unpacked:', e2.message);
+      process.exit(1);
+    }
+  }
+  // 清理过旧备份（保留最近 1 个即可）
+  try {
+    const olds = fs
+      .readdirSync(dist)
+      .filter((n) => /^win-unpacked-old-/.test(n))
+      .map((n) => ({ n, t: fs.statSync(path.join(dist, n)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    for (const o of olds.slice(2)) {
+      try {
+        fs.rmSync(path.join(dist, o.n), { recursive: true, force: true });
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
 function main() {
-  console.log('=== AIHelper Agent 离线包构建 ===');
+  const dirOnly = process.argv.includes('--dir-only');
+  console.log('=== AIHelper Agent 离线包构建 ===', dirOnly ? '(仅 --dir)' : '');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  console.log('package.json version =', pkg.version);
 
   if (!fs.existsSync(path.join(root, 'node_modules', 'electron'))) {
     console.log('安装依赖…');
@@ -64,26 +114,60 @@ function main() {
     console.warn('Playwright chromium 安装失败，将依赖目标机系统 Chrome/Edge');
   }
 
+  killLockingProcesses();
+  // 等文件句柄释放
+  try {
+    execSync('powershell -NoProfile -Command "Start-Sleep -Seconds 2"', {
+      stdio: 'ignore',
+      windowsHide: true
+    });
+  } catch (_) {}
+  clearWinUnpacked();
+
   // 仅 dir 目标（package.json 已 signAndEditExecutable:false），不依赖 winCodeSign
+  // 绿色版够用；NSIS/portable 常因网络下 nsis 失败，默认跳过（设 BUILD_NSIS=1 才打）
   let packed = false;
   try {
     run('npx.cmd electron-builder --win --dir');
     packed = true;
   } catch (e) {
-    console.warn('electron-builder --dir 失败:', e.message);
+    console.warn('electron-builder --dir 第一次失败，再释放进程后重试…');
+    killLockingProcesses();
+    try {
+      execSync('powershell -NoProfile -Command "Start-Sleep -Seconds 3"', {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+    } catch (_) {}
+    clearWinUnpacked();
+    try {
+      run('npx.cmd electron-builder --win --dir');
+      packed = true;
+    } catch (e2) {
+      console.error('electron-builder --dir 失败:', e2.message);
+      console.error('请手动：1) 关掉所有 AIHelper Agent.exe  2) 关掉打开 dist\\win-unpacked 的资源管理器  3) 再 npm run build:offline');
+      process.exit(1);
+    }
   }
 
-  // 可选 NSIS / portable（需能下载 nsis 工具；失败则仅绿色版）
-  try {
-    run('npx.cmd electron-builder --win nsis');
-  } catch (e) {
-    console.warn('NSIS 安装包生成跳过（常见原因：无法下载 nsis/winCodeSign）');
+  if (!dirOnly && process.env.BUILD_NSIS === '1') {
+    try {
+      run('npx.cmd electron-builder --win nsis');
+    } catch (e) {
+      console.warn('NSIS 安装包生成跳过（常见原因：无法下载 nsis/winCodeSign）');
+    }
+  } else if (!dirOnly) {
+    console.log('跳过 NSIS（需要时: set BUILD_NSIS=1&& npm run build:offline）');
   }
 
-  try {
-    run('npx.cmd electron-builder --win portable');
-  } catch (e) {
-    console.warn('Portable 生成跳过');
+  if (!dirOnly && process.env.BUILD_PORTABLE === '1') {
+    try {
+      run('npx.cmd electron-builder --win portable');
+    } catch (e) {
+      console.warn('Portable 生成跳过');
+    }
+  } else if (!dirOnly) {
+    console.log('跳过 portable（需要时: set BUILD_PORTABLE=1）');
   }
 
   const winUnpacked = path.join(dist, 'win-unpacked');

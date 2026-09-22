@@ -27,6 +27,37 @@ function main() {
     process.exit(1);
   }
 
+  // assemble 只复制已有 dist，不会更新 asar。版本必须与 package.json 一致，否则目标机仍显示旧版。
+  const pkgCheck = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const wantVer = String(pkgCheck.version || '');
+  const asarPath = path.join(winUnpacked, 'resources', 'app.asar');
+  try {
+    let asarVer = '';
+    try {
+      const asar = require('@electron/asar');
+      asarVer = JSON.parse(asar.extractFile(asarPath, 'package.json').toString()).version;
+    } catch (_) {
+      try {
+        const asar = require('asar');
+        asarVer = JSON.parse(asar.extractFile(asarPath, 'package.json').toString()).version;
+      } catch (__) {}
+    }
+    if (asarVer && wantVer && asarVer !== wantVer) {
+      console.error('');
+      console.error('【版本不一致】package.json=' + wantVer + '，但 dist/win-unpacked 内 asar=' + asarVer);
+      console.error('assemble 不会重编译，只会打出「文件名新、内容旧」的 zip。');
+      console.error('请先执行其一：');
+      console.error('  npx electron-builder --win --dir');
+      console.error('  npm run build:dir');
+      console.error('  npm run build:offline');
+      console.error('然后再: node scripts/assemble-offline.js');
+      process.exit(1);
+    }
+    if (asarVer) console.log('校验 asar 版本 OK:', asarVer);
+  } catch (e) {
+    console.warn('无法读取 asar 版本（继续组装）:', e.message);
+  }
+
   if (fs.existsSync(outDir)) {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
