@@ -685,13 +685,23 @@
     }
   });
 
+  let aborting = false;
   btnAbort.addEventListener('click', async () => {
-    // 立即解锁 UI，避免等工具超时才像「停不了」
+    if (aborting) return;
+    aborting = true;
+    // 立即解锁 UI（后台仍会尽快中断；Playwright 最长约 1 步会结束）
     setBusy(false);
     addMessage('system', '正在停止…');
     try {
-      await window.aihelper.abort();
-    } catch (_) {}
+      const r = await window.aihelper.abort();
+      if (r && r.ok === false) {
+        addMessage('system', r.error || '当前没有进行中的任务');
+      }
+    } catch (e) {
+      addMessage('system', '停止请求已发送');
+    } finally {
+      aborting = false;
+    }
   });
 
   $('btnNewSession').addEventListener('click', async () => {

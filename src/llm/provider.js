@@ -43,12 +43,22 @@ class LLMProvider {
     const doRequest = async (payload) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), p.timeoutMs || 120000);
+      let onAbort = null;
       if (options.signal) {
-        const onAbort = () => controller.abort();
-        if (options.signal.aborted) controller.abort();
+        onAbort = () => {
+          try {
+            controller.abort();
+          } catch (_) {}
+        };
+        if (options.signal.aborted) onAbort();
         else options.signal.addEventListener('abort', onAbort, { once: true });
       }
       try {
+        if (options.signal && options.signal.aborted) {
+          const err = new Error('已取消');
+          err.name = 'AbortError';
+          throw err;
+        }
         const headers = { 'Content-Type': 'application/json' };
         if (p.apiKey) headers.Authorization = `Bearer ${p.apiKey}`;
         const res = await fetch(url, {
@@ -72,8 +82,24 @@ class LLMProvider {
           throw err;
         }
         return data;
+      } catch (err) {
+        // node-fetch / AbortController：用户点停止
+        if (
+          (options.signal && options.signal.aborted) ||
+          (err && (err.name === 'AbortError' || err.type === 'aborted'))
+        ) {
+          const e = new Error('已取消');
+          e.name = 'AbortError';
+          throw e;
+        }
+        throw err;
       } finally {
         clearTimeout(timeout);
+        if (options.signal && onAbort) {
+          try {
+            options.signal.removeEventListener('abort', onAbort);
+          } catch (_) {}
+        }
       }
     };
 

@@ -1633,8 +1633,15 @@ function createBrowserTools(options = {}) {
     bs.throwIfAborted();
     bs.logAction('tool.start', { name, args: sanitizeArgs(name, args) });
     try {
-      const result = await fn();
+      // 与「停止」竞态：不必等 Playwright click/goto 自然超时
+      const result = await bs.raceAbort(Promise.resolve().then(() => fn()));
       bs.throwIfAborted();
+      // 停止时曾把 defaultTimeout 打到 1ms，恢复
+      try {
+        if (bs.getShared().page && !bs.getShared().page.isClosed()) {
+          bs.getShared().page.setDefaultTimeout(cfg.timeoutMs || 30000);
+        }
+      } catch (_) {}
       bs.logAction('tool.end', {
         name,
         ok: true,
@@ -1643,6 +1650,11 @@ function createBrowserTools(options = {}) {
       });
       return result;
     } catch (err) {
+      try {
+        if (bs.getShared().page && !bs.getShared().page.isClosed()) {
+          bs.getShared().page.setDefaultTimeout(cfg.timeoutMs || 30000);
+        }
+      } catch (_) {}
       bs.logAction('tool.end', {
         name,
         ok: false,

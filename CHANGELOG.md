@@ -6,11 +6,18 @@
 
 ---
 
+## [1.6.6] — 2026-09-22
+
+### 停止为何有时无效 + 加强
+- **原因**：停止只能取消 HTTP/模型请求；卡在 Playwright `click`/`goto`（最长数秒～30s）时，旧逻辑要等超时才退出
+- 所有工具 `raceAbort`：停止后约 120ms 内抛「已取消」，不必等 Playwright 自然超时
+- 停止时 `window.stop` + 临时缩短 page 超时，加速打断
+- 模型 fetch 用户 abort 统一为 AbortError「已取消」
+
 ## [1.6.5] — 2026-09-22
 
 ### Element modal 点击 + 停止对话
-- `browser_click`：优先 el-dialog/message-box 等弹层内可见按钮；短超时 → force → JS（modal 内优先）
-- 「停止」：`abort` 置位 + 打断 download 等待；工具执行前/中检查已取消；UI 立即解锁，不再卡死
+- modal 内优先点击；停止置位 + UI 立即解锁
 
 ## [1.6.4] — 2026-09-22
 

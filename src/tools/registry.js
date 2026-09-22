@@ -74,7 +74,8 @@ function createToolRegistry(options = {}) {
     }
     const fn = handlers[name];
     if (!fn) throw new Error(`未知工具: ${name}`);
-    return fn(args || {});
+    // 所有工具都与停止标志竞态（HTTP/下载/浏览器）
+    return browserSession.raceAbort(Promise.resolve().then(() => fn(args || {})));
   }
 
   function abortRunning() {

@@ -35,9 +35,62 @@ function requestAbort() {
   shared.downloadWaiters = [];
   for (const w of waiters) {
     try {
-      w.reject(new Error('已取消'));
+      w.reject(Object.assign(new Error('已取消'), { name: 'AbortError' }));
     } catch (_) {}
   }
+  // 尽量打断卡在 Playwright 上的操作（不关 browser，keepSession 仍可用）
+  try {
+    const p = shared.page;
+    if (p && !p.isClosed()) {
+      try {
+        p.setDefaultTimeout(1);
+      } catch (_) {}
+      p.evaluate(() => {
+        try {
+          if (typeof window.stop === 'function') window.stop();
+        } catch (_) {}
+      }).catch(() => {});
+    }
+  } catch (_) {}
+}
+
+/** 与长时间 Playwright/IO 竞态：一点停止就立刻抛 AbortError，不必等 click 超时 */
+function raceAbort(promise) {
+  if (shared.aborted) {
+    const err = new Error('已取消');
+    err.name = 'AbortError';
+    return Promise.reject(err);
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setInterval(() => {
+      if (shared.aborted && !settled) {
+        settled = true;
+        clearInterval(timer);
+        const err = new Error('已取消');
+        err.name = 'AbortError';
+        reject(err);
+      }
+    }, 120);
+    Promise.resolve(promise).then(
+      (v) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(timer);
+        if (shared.aborted) {
+          const err = new Error('已取消');
+          err.name = 'AbortError';
+          reject(err);
+        } else resolve(v);
+      },
+      (e) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(timer);
+        reject(e);
+      }
+    );
+  });
 }
 
 function clearAbort() {
@@ -407,6 +460,7 @@ module.exports = {
   clearAbort,
   isAborted,
   throwIfAborted,
+  raceAbort,
   findLocalBrowser,
   findBundledChromium,
   findSystemBrowser,
