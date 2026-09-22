@@ -6,12 +6,17 @@
 
 ---
 
+## [1.5.5] — 2026-09-22
+
+### 下载「已删除」与 Chrome/Edge 说明
+- **不再删除** playwright-artifacts 临时文件（删了 Edge 下载栏会显示已删除；最终文件仍在配置下载目录）
+- 本机无 Google Chrome 时会用 **Edge**（日志 `executablePath=msedge.exe`）；设置页可填 `executablePath`
+- `browser_state` / launch 日志带 `browserName`、`executablePath`、`chromeInstalled`
+
 ## [1.5.4] — 2026-09-22
 
-### 去掉 Playwright 临时下载路径
-- `E:\Temp\playwright-artifacts-*\uuid` 仅为中间文件；`saveAs` 后删除该临时文件
-- CDP 改用 `behavior: allow`（不用 `allowAndName`，避免 UUID 文件名）
-- saveAs 失败时从 artifact 拷贝到配置下载目录兜底
+### 下载路径
+- CDP `behavior: allow`；saveAs 到配置目录；勿把 Temp/artifacts 当最终路径
 
 ## [1.5.3] — 2026-09-22
 

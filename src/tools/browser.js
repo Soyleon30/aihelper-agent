@@ -487,9 +487,17 @@ function createBrowserTools(options = {}) {
 
     const preferSystem = cfg.preferSystemBrowser !== false;
     bs.ensurePlaywrightBrowsersEnv();
-    const localChrome = bs.findLocalBrowser({ preferSystem });
+    const exeFromCfg = String(cfg.executablePath || cfg.chromePath || '').trim();
+    const localChrome = bs.findLocalBrowser({
+      preferSystem,
+      preferChrome: cfg.preferChrome !== false,
+      chromeOnly: cfg.chromeOnly === true,
+      executablePath: exeFromCfg || undefined
+    });
     if (localChrome) launchOpts.executablePath = localChrome;
     else if (cfg.channel) launchOpts.channel = cfg.channel;
+    shared.executablePath = launchOpts.executablePath || '';
+    shared.browserName = bs.detectBrowserName(shared.executablePath);
 
     const ua =
       cfg.userAgent ||
@@ -582,7 +590,10 @@ function createBrowserTools(options = {}) {
       stealth: stealthEnabled(),
       keepSession,
       downloadDir: dlRoot,
-      executablePath: launchOpts.executablePath || launchOpts.channel || 'bundled'
+      browserName: shared.browserName,
+      executablePath: launchOpts.executablePath || launchOpts.channel || 'bundled',
+      chromeInstalled: !!bs.findSystemChrome(),
+      edgeInstalled: !!bs.findSystemEdge()
     });
     return shared.page;
   }
@@ -607,7 +618,8 @@ function createBrowserTools(options = {}) {
           return '';
         }
       })();
-      // Playwright 内部临时路径（常在 %TEMP%/playwright-artifacts-*），勿当最终路径
+      // 勿 unlink Playwright artifact：Edge/Chrome 下载栏仍指向临时路径，删了会显示「已删除」
+      // 最终文件以 saveAs 到 dlRoot 为准
       let artifactPath = '';
       try {
         artifactPath = (await download.path()) || '';
@@ -621,16 +633,11 @@ function createBrowserTools(options = {}) {
           `download-${Date.now()}`;
         const dest = uniquePath(dlRoot, safe);
         await download.saveAs(dest);
-        // 清理 artifacts 里的 UUID 临时文件，避免用户在资源管理器/地址栏看到 file:///E:/Temp/...
-        if (artifactPath && path.resolve(artifactPath) !== path.resolve(dest)) {
-          try {
-            if (fsSync.existsSync(artifactPath)) fsSync.unlinkSync(artifactPath);
-          } catch (_) {}
-        }
         let size = 0;
         try {
           size = fsSync.statSync(dest).size;
         } catch (_) {}
+        if (!size) throw new Error('saveAs 后文件为空或不存在: ' + dest);
         const rec = {
           ok: true,
           path: dest,
@@ -638,12 +645,14 @@ function createBrowserTools(options = {}) {
           url,
           suggestedRaw,
           size,
+          note:
+            '最终文件在 path；浏览器下载栏若显示 Temp/playwright-artifacts 可忽略，请到 downloadDir 打开',
+          downloadDir: dlRoot,
           at: new Date().toISOString()
         };
         bs.pushDownloadRecord(rec);
         bs.logAction('browser.download', rec);
       } catch (err) {
-        // saveAs 失败时：若临时文件在，尽量拷到下载目录
         let recovered = '';
         try {
           if (artifactPath && fsSync.existsSync(artifactPath)) {
@@ -653,9 +662,6 @@ function createBrowserTools(options = {}) {
               `download-${Date.now()}`;
             recovered = uniquePath(dlRoot, safe);
             fsSync.copyFileSync(artifactPath, recovered);
-            try {
-              fsSync.unlinkSync(artifactPath);
-            } catch (_) {}
           }
         } catch (_) {
           recovered = '';
@@ -673,6 +679,7 @@ function createBrowserTools(options = {}) {
             suggestedRaw,
             size,
             recoveredFrom: artifactPath || '',
+            downloadDir: dlRoot,
             at: new Date().toISOString()
           };
           bs.pushDownloadRecord(rec);
@@ -681,11 +688,13 @@ function createBrowserTools(options = {}) {
         }
         const rec = {
           ok: false,
-          path: artifactPath || '',
+          path: '',
           filename: suggestedRaw || '',
           url,
           suggestedRaw,
           error: err.message || String(err),
+          artifactPath: artifactPath || '',
+          downloadDir: dlRoot,
           at: new Date().toISOString()
         };
         bs.pushDownloadRecord(rec);
@@ -934,11 +943,14 @@ function createBrowserTools(options = {}) {
         const p = await ensurePage();
         const waitUntil = args.waitUntil || 'domcontentloaded';
         await p.goto(args.url, { waitUntil, timeout: cfg.timeoutMs || 30000 });
+        const sh = bs.getShared();
         const out = {
           url: p.url(),
           title: await p.title(),
           keptSession: true,
-          downloadDir: bs.getShared().downloadDir || '',
+          downloadDir: sh.downloadDir || '',
+          browserName: sh.browserName || bs.detectBrowserName(sh.executablePath),
+          executablePath: sh.executablePath || '',
           visible: cfg.headless !== true
         };
         bs.logAction('page.loaded', out);

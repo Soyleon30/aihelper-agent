@@ -90,6 +90,7 @@
       "userDataDir": "",
       "stealth": true,
       "preferSystemBrowser": true,
+      "executablePath": "",
       "ignoreHTTPSErrors": true,
       "locale": "zh-CN",
       "timezoneId": "Asia/Shanghai",

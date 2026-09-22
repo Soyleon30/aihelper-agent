@@ -294,15 +294,19 @@
               </label>
               <label class="field checkbox">
                 <input id="cfgBrowserSystem" type="checkbox" />
-                <span>优先使用本机 Chrome/Edge</span>
+                <span>优先使用本机浏览器（有 Chrome 用 Chrome，否则 Edge）</span>
               </label>
               <label class="field checkbox">
                 <input id="cfgBrowserKeep" type="checkbox" />
                 <span>保持浏览器会话（人工操作后可继续）</span>
               </label>
             </div>
+            <label class="field">
+              <span>浏览器可执行文件（空=自动；本机无 Chrome 时会用 Edge）</span>
+              <input id="cfgBrowserExe" type="text" placeholder="例如 C:\Program Files\Google\Chrome\Application\chrome.exe" />
+            </label>
             <p class="muted" style="margin:4px 0 0;font-size:12px;">
-              默认本机可见 Chrome（非无头）：助手用 DOM 点击/输入/读文本，你可同步看到窗口操作。保持会话时对话切换不关页；仅 browser_close 或退出应用才关闭。页面下载用 browser_click(waitDownload) / browser_wait_download。
+              默认有界面。本机未装 Google Chrome 时「打开 chrome」实际是 Edge——属正常。下载最终在「下载目录」，浏览器栏若显示 Temp 路径可忽略。保持会话时对话切换不关页。
             </p>
             <label class="field">
               <span>文件允许根目录（每行一个，空=不限制）</span>

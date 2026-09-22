@@ -21,8 +21,20 @@ let shared = {
   /** @type {Array<{path:string,filename:string,url:string,at:string,ok:boolean,error?:string}>} */
   recentDownloads: [],
   downloadWaiters: [],
-  downloadDir: ''
+  downloadDir: '',
+  executablePath: '',
+  browserName: ''
 };
+
+function detectBrowserName(exePath) {
+  const p = String(exePath || '').toLowerCase();
+  if (!p) return 'unknown';
+  if (p.includes('msedge') || p.includes('\\edge\\')) return 'Edge';
+  if (p.includes('chrome.exe') && p.includes('chromium')) return 'Chromium';
+  if (p.includes('chrome')) return 'Chrome';
+  if (p.includes('chromium')) return 'Chromium';
+  return path.basename(exePath || '') || 'browser';
+}
 
 function pushDownloadRecord(rec) {
   if (!Array.isArray(shared.recentDownloads)) shared.recentDownloads = [];
@@ -88,12 +100,17 @@ function isPageAlive() {
 
 async function getState() {
   const recent = (shared.recentDownloads || []).slice(-5);
+  const browserMeta = {
+    browserName: shared.browserName || detectBrowserName(shared.executablePath),
+    executablePath: shared.executablePath || ''
+  };
   if (!isPageAlive()) {
     return {
       open: false,
       sessionId: shared.sessionId,
       downloadDir: shared.downloadDir || '',
       recentDownloads: recent,
+      ...browserMeta,
       message: '浏览器未打开或已关闭'
     };
   }
@@ -105,6 +122,7 @@ async function getState() {
     try {
       textPreview = (await p.locator('body').innerText({ timeout: 3000 })).slice(0, 500);
     } catch (_) {}
+    const name = browserMeta.browserName || '浏览器';
     return {
       open: true,
       sessionId: shared.sessionId,
@@ -114,11 +132,16 @@ async function getState() {
       launchedAt: shared.launchedAt,
       downloadDir: shared.downloadDir || '',
       recentDownloads: recent,
-      hint:
-        '可见本机 Chrome 窗口，DOM 操作（非截图）。可在当前页继续 click/type；下载用 browser_wait_download 或看 recentDownloads'
+      ...browserMeta,
+      hint: `当前是本机 ${name}（非无头）。下载最终文件在 downloadDir，勿看 Temp/playwright-artifacts。可在当前页继续 click/type。`
     };
   } catch (err) {
-    return { open: false, error: err.message || String(err), recentDownloads: recent };
+    return {
+      open: false,
+      error: err.message || String(err),
+      recentDownloads: recent,
+      ...browserMeta
+    };
   }
 }
 
@@ -251,24 +274,96 @@ function ensurePlaywrightBrowsersEnv() {
   return null;
 }
 
-function findSystemBrowser() {
-  const candidates = [
+function readAppPathFromRegistry(appName) {
+  // 非 Electron 主进程也可能读注册表；失败则忽略
+  try {
+    const { execSync } = require('child_process');
+    const key = `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\${appName}`;
+    const out = execSync(`reg query "${key}" /ve`, {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 3000
+    });
+    const m = /REG_SZ\s+(.+)$/im.exec(out);
+    if (m) {
+      const p = m[1].trim().replace(/^"|"$/g, '');
+      if (p && fs.existsSync(p)) return p;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function findChromeCandidates() {
+  const local =
+    process.env.LOCALAPPDATA ||
+    (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local') : '');
+  const list = [
     process.env.CHROME_PATH,
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    local ? path.join(local, 'Google', 'Chrome', 'Application', 'chrome.exe') : ''
+  ].filter(Boolean);
+  const reg = readAppPathFromRegistry('chrome.exe');
+  if (reg) list.unshift(reg);
+  return list;
+}
+
+function findEdgeCandidates() {
+  const list = [
+    process.env.EDGE_PATH,
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
   ].filter(Boolean);
-  for (const p of candidates) {
+  const reg = readAppPathFromRegistry('msedge.exe');
+  if (reg) list.unshift(reg);
+  return list;
+}
+
+function firstExisting(paths) {
+  for (const p of paths) {
     try {
-      if (fs.existsSync(p)) return p;
+      if (p && fs.existsSync(p)) return p;
     } catch (_) {}
   }
   return null;
 }
 
+/** 只找 Google Chrome（不含 Edge） */
+function findSystemChrome() {
+  return firstExisting(findChromeCandidates());
+}
+
+/** Edge */
+function findSystemEdge() {
+  return firstExisting(findEdgeCandidates());
+}
+
+/**
+ * preferChrome: true 时优先 Chrome，没有再 Edge
+ * executablePath 显式指定最高优先
+ */
+function findSystemBrowser(opts = {}) {
+  if (opts.executablePath) {
+    try {
+      if (fs.existsSync(opts.executablePath)) return opts.executablePath;
+    } catch (_) {}
+  }
+  const chrome = findSystemChrome();
+  if (opts.chromeOnly) return chrome;
+  if (opts.preferChrome !== false && chrome) return chrome;
+  const edge = findSystemEdge();
+  if (edge) return edge;
+  return chrome;
+}
+
 function findLocalBrowser(opts = {}) {
   const preferSystem = opts.preferSystem !== false;
+  if (opts.executablePath) {
+    try {
+      if (fs.existsSync(opts.executablePath)) return opts.executablePath;
+    } catch (_) {}
+  }
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
     const e = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     try {
@@ -277,7 +372,11 @@ function findLocalBrowser(opts = {}) {
   }
   const bundled = findBundledChromium();
   if (!preferSystem && bundled) return bundled;
-  const system = findSystemBrowser();
+  const system = findSystemBrowser({
+    preferChrome: opts.preferChrome !== false,
+    chromeOnly: opts.chromeOnly === true,
+    executablePath: opts.executablePath
+  });
   if (preferSystem && system) return system;
   if (bundled) return bundled;
   if (system) return system;
@@ -297,6 +396,9 @@ module.exports = {
   findLocalBrowser,
   findBundledChromium,
   findSystemBrowser,
+  findSystemChrome,
+  findSystemEdge,
+  detectBrowserName,
   ensurePlaywrightBrowsersEnv,
   resolvePlaywrightBrowsersPath,
   path,

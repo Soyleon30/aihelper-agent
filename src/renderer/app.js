@@ -214,6 +214,10 @@
     $('cfgBrowserStealth').checked = c.tools?.browser?.stealth !== false;
     $('cfgBrowserSystem').checked = c.tools?.browser?.preferSystemBrowser !== false;
     $('cfgBrowserKeep').checked = c.tools?.browser?.keepSession !== false;
+    if ($('cfgBrowserExe')) {
+      $('cfgBrowserExe').value =
+        c.tools?.browser?.executablePath || c.tools?.browser?.chromePath || '';
+    }
     $('cfgAllowedRoots').value = (c.tools?.file?.allowedRoots || []).join('\n');
     const lg = c.logging || {};
     $('cfgLogEnabled').checked = lg.enabled !== false;
@@ -295,6 +299,9 @@
     state.config.tools.browser.stealth = $('cfgBrowserStealth').checked;
     state.config.tools.browser.preferSystemBrowser = $('cfgBrowserSystem').checked;
     state.config.tools.browser.keepSession = $('cfgBrowserKeep').checked;
+    if ($('cfgBrowserExe')) {
+      state.config.tools.browser.executablePath = ($('cfgBrowserExe').value || '').trim();
+    }
     state.config.tools.file.allowedRoots = $('cfgAllowedRoots').value
       .split(/\r?\n/)
       .map((s) => {
