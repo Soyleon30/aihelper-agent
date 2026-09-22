@@ -171,6 +171,81 @@ function ensureDir(dir) {
   return dir;
 }
 
+/**
+ * 解析保存目标：支持 path / dir+filename / 默认下载目录。
+ * skipIfExists=true 且同名已存在 → skipped；否则 uniquePath 避让。
+ * force=true 覆盖同名（仍写原路径，不改名）。
+ */
+function resolveSaveTarget(opts = {}) {
+  const defaultRoot = resolveDownloadRoot(opts.defaultDir || '', opts.userDataPath);
+  let dir = defaultRoot;
+  let base = '';
+  let explicitPath = false;
+
+  if (opts.path) {
+    const raw = String(opts.path).trim();
+    if (raw) {
+      explicitPath = true;
+      const abs = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(defaultRoot, raw);
+      dir = path.dirname(abs);
+      base = path.basename(abs);
+    }
+  }
+  if (!base && opts.dir) {
+    const d = String(opts.dir).trim();
+    if (d) dir = path.isAbsolute(d) ? path.resolve(d) : path.resolve(defaultRoot, d);
+  }
+  if (!base && opts.filename) {
+    base = decodeDownloadFilename(opts.filename) || String(opts.filename).trim();
+  }
+  if (!base) {
+    base =
+      pickDownloadFilename({
+        suggested: opts.suggested,
+        url: opts.url,
+        contentDisposition: opts.contentDisposition
+      }) || `download-${Date.now()}`;
+  }
+  base = decodeDownloadFilename(base) || base.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim();
+  if (!base) base = `download-${Date.now()}`;
+
+  ensureDir(dir);
+  let dest = path.join(dir, base);
+  const force = opts.force === true;
+  const skipIfExists = opts.skipIfExists !== false;
+
+  if (!force && fs.existsSync(dest)) {
+    let size = 0;
+    try {
+      size = fs.statSync(dest).size;
+    } catch (_) {}
+    if (skipIfExists) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'file_exists',
+        dir,
+        filename: base,
+        path: dest,
+        size,
+        message: '目标文件已存在，跳过下载',
+        explicitPath
+      };
+    }
+    // 不跳过：改名避让（force 才覆盖）
+    dest = uniquePath(dir, base);
+  }
+
+  return {
+    ok: true,
+    skipped: false,
+    dir,
+    filename: path.basename(dest),
+    path: dest,
+    explicitPath
+  };
+}
+
 module.exports = {
   resolveDownloadRoot,
   decodeDownloadFilename,
@@ -178,6 +253,7 @@ module.exports = {
   pickDownloadFilename,
   filenameFromUrl,
   uniquePath,
+  resolveSaveTarget,
   ensureDir,
   hasCjk,
   looksLikeMojibake

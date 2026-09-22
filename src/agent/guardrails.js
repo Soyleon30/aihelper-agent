@@ -15,8 +15,10 @@ const DEFAULT_ANTI_HALLUCINATION_RULES = `
 9. 复杂页面可先 browser_record_start，让用户手操一遍，再 browser_record_stop；之后用 browser_flow_run 并传入 vars 替换 {{变量}}。
 10. 点击「详情」等表格按钮若超时，继续用 browser_click（可见优先/JS 回退），勿反复盲目 navigate。
 11. 这是多轮对话：结合历史理解意图，不要把每条消息当全新任务（除非用户说重新开始）。
-12. 下载优先：已知 URL 用 download_file；页面里点下载用 browser_download（解析真实链接 + HTTP 落盘到配置目录，避开 Temp/UUID）。仅 blob/无 http 链接时才 browser_click(waitDownload:true)。
+12. 下载优先：已知 URL 用 download_file；页面里点下载用 browser_download（可传 filename/path/dir；同名默认跳过）。仅 blob/无 http 链接时才 browser_click(waitDownload:true)。
 13. 邮件仅支持本机 Coremail 客户端/已登录网页（非 IMAP/POP3）：mail_list / mail_search / mail_read 等。禁止声称已发送或删除邮件。
+14. 【禁止乱点】browser_click 的 text/selector 必须对应：用户原话里点名的控件，或本轮 browser_get_text/state 已确认存在的目标按钮。禁止把用户任务词（如「日志」「查询」「搜索」「下载」）当成导航菜单去点，除非用户明确说点该菜单。不确定先 browser_get_text，不要试探性乱点。
+15. 下载落盘：用户指定了文件名/目录时必须传 filename 或 path/dir；同名已存在应跳过并告知路径，不要 silent 改名成 file(1).ext（除非用户要求强制覆盖 force=true）。
 `.trim();
 
 const DEFAULT_EFFICIENCY_RULES = `
@@ -67,7 +69,7 @@ function inferPreferredTools(userMessage) {
   }
   if (/下载|md\b|markdown|\.pdf|\.zip/i.test(s)) {
     tips.push(
-      'browser_download / download_file / download_from_markdown / browser_resolve_download_url / get_download_dir'
+      'browser_download(filename/path/dir) / download_file / download_from_markdown / get_download_dir；勿乱点无关菜单'
     );
   }
   if (/文件|目录|读取|写入|删除|列表/i.test(s)) {
@@ -75,7 +77,7 @@ function inferPreferredTools(userMessage) {
   }
   if (/网页|浏览器|登录|点击|截图|打开.*http/i.test(s)) {
     tips.push(
-      'browser_state / browser_navigate / browser_click / browser_get_text / browser_wait_download'
+      'browser_state → browser_get_text 确认控件 → 再 browser_click（text 须与用户指令一致，禁止点「日志/查询」等无关导航）'
     );
   }
   if (/http|api|POST|GET|接口|请求/i.test(s)) {
@@ -193,6 +195,64 @@ function isDuplicateToolCall(trace, name, args) {
   return false;
 }
 
+/** 常见侧栏/顶栏导航词：用户未点名时禁止 browser_click(text=这些) */
+const SPURIOUS_CLICK_TEXTS = [
+  '日志',
+  '查询',
+  '搜索',
+  '首页',
+  '主页',
+  '帮助',
+  '设置',
+  '关于',
+  '退出',
+  '登录',
+  '注册',
+  '消息',
+  '通知',
+  '工作台',
+  '控制台',
+  '仪表盘',
+  'dashboard',
+  'home',
+  'log',
+  'logs',
+  'query',
+  'search',
+  'settings',
+  'help'
+];
+
+/**
+ * 拦截模型瞎点导航：click text 是常见菜单词，且用户原话未包含该词。
+ * 返回 null 表示放行；否则返回要喂给模型的错误结果。
+ */
+function checkSpuriousBrowserClick(name, args, userMessage) {
+  if (name !== 'browser_click' && name !== 'browser_download') return null;
+  const text = String((args && args.text) || '').trim();
+  if (!text) return null;
+  // 只拦短、像菜单的纯文本；长文案（用户可能复制的按钮全文）放行
+  if (text.length > 12) return null;
+  const lower = text.toLowerCase();
+  const hit = SPURIOUS_CLICK_TEXTS.find(
+    (t) => t === text || t.toLowerCase() === lower
+  );
+  if (!hit) return null;
+  const msg = String(userMessage || '');
+  // 用户原话包含该词（或明显点名）则放行
+  if (msg.includes(text) || msg.toLowerCase().includes(lower)) return null;
+  // 用户明确说「点/点击/打开 xxx」且 xxx 与 text 接近也放行（上面 includes 已覆盖）
+  return {
+    ok: false,
+    error: 'spurious_click_blocked',
+    blockedText: text,
+    hint:
+      `已拦截：用户指令未要求点击「${text}」。禁止把任务关键词当成导航菜单乱点。` +
+      `请先 browser_get_text / browser_state 确认真实控件，再对用户点名的按钮 click；` +
+      `下载请用 browser_download 并传 filename/path/dir。`
+  };
+}
+
 function buildEvidenceBlock(trace) {
   if (!trace || !trace.length) return '（本轮无工具调用记录）';
   return trace
@@ -294,5 +354,6 @@ module.exports = {
   compactToolResult,
   buildRoundBudgetHint,
   buildForceFinalMessage,
-  isDuplicateToolCall
+  isDuplicateToolCall,
+  checkSpuriousBrowserClick
 };

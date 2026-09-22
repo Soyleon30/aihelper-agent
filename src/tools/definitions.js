@@ -99,18 +99,19 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'download_file',
       description:
-        '下载文件到配置的下载目录。同一 URL 默认只下一次（skipIfExists），避免按文档重复下载。返回本地绝对路径。',
+        '下载文件到配置的下载目录（可用 path/dir/filename 指定位置与名称）。同名文件或同一 URL 默认跳过（skipIfExists）。返回本地绝对路径。',
       parameters: {
         type: 'object',
         properties: {
           url: { type: 'string', description: '文件 URL' },
           filename: { type: 'string', description: '可选保存文件名' },
-          path: { type: 'string', description: '可选完整保存路径' },
+          path: { type: 'string', description: '可选完整保存路径（优先于 dir+filename）' },
+          dir: { type: 'string', description: '可选保存目录（与 filename 配合）' },
           skipIfExists: {
             type: 'boolean',
-            description: '默认 true：URL 或文件已存在则跳过'
+            description: '默认 true：同名文件或 URL 已存在则跳过'
           },
-          force: { type: 'boolean', description: 'true 则强制重新下载' },
+          force: { type: 'boolean', description: 'true 则强制覆盖/重新下载' },
           timeoutMs: { type: 'number' }
         },
         required: ['url']
@@ -265,19 +266,29 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_click',
       description:
-        '点击页面元素（CSS 选择器或文本）。优先 Element/通用 modal 内可见按钮，短超时+force+JS 回退，缓解 el-dialog 超时。下载按钮优先 browser_download；waitDownload=true 可等文件落盘。',
+        '点击页面元素（CSS 选择器或文本）。text/selector 必须来自用户指令或本轮 browser_get_text 看到的真实控件，禁止瞎点导航栏「日志」「查询」「首页」等。下载优先 browser_download；waitDownload=true 可等落盘，并可传 filename/path/dir。',
       parameters: {
         type: 'object',
         properties: {
           selector: { type: 'string', description: 'CSS 选择器' },
-          text: { type: 'string', description: '可见文本（与 selector 二选一）' },
+          text: {
+            type: 'string',
+            description: '可见文本（与 selector 二选一）；须与用户要操作的按钮一致，勿用无关词'
+          },
           timeoutMs: { type: 'number' },
           force: { type: 'boolean', description: 'true=强制点击；false=禁用 force 回退' },
           waitDownload: {
             type: 'boolean',
             description: 'true=等待本次点击触发的下载完成并返回 path'
           },
-          downloadTimeoutMs: { type: 'number', description: '等下载超时，默认 60000' }
+          downloadTimeoutMs: { type: 'number', description: '等下载超时，默认 60000' },
+          filename: { type: 'string', description: 'waitDownload 时可选保存名' },
+          path: { type: 'string', description: 'waitDownload 时可选完整保存路径' },
+          dir: { type: 'string', description: 'waitDownload 时可选保存目录' },
+          skipIfExists: {
+            type: 'boolean',
+            description: 'waitDownload 时默认 true：同名已存在则跳过'
+          }
         }
       }
     }
@@ -332,14 +343,21 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_download',
       description:
-        '【推荐】点页面下载按钮/链接：解析真实 http(s) URL（href 或点击后拦网络 Content-Disposition）→ 用浏览器 Cookie HTTP 保存到配置目录（xlsx/tar/zip/pdf 等）。blob 无 URL 时回退 Playwright。参数 selector/text 或 url；返回 path。',
+        '【推荐】点页面下载按钮/链接并落盘。可用 filename/path/dir 指定保存位置与名称；同名默认跳过（skipIfExists）。参数 selector/text 或 url；返回 path。',
       parameters: {
         type: 'object',
         properties: {
           url: { type: 'string', description: '已知文件 URL 时直接下' },
           selector: { type: 'string', description: '下载按钮/链接 CSS' },
-          text: { type: 'string', description: '下载按钮可见文本' },
-          filename: { type: 'string', description: '可选保存名' },
+          text: { type: 'string', description: '下载按钮可见文本（须与用户指令一致）' },
+          filename: { type: 'string', description: '可选保存文件名' },
+          path: { type: 'string', description: '可选完整保存路径' },
+          dir: { type: 'string', description: '可选保存目录（与 filename 配合）' },
+          skipIfExists: {
+            type: 'boolean',
+            description: '默认 true：目标同名文件已存在则跳过'
+          },
+          force: { type: 'boolean', description: 'true 则覆盖同名文件' },
           click: { type: 'boolean', description: '无 href 时是否点击解析，默认 true' },
           timeoutMs: { type: 'number' },
           fallbackPlaywright: {

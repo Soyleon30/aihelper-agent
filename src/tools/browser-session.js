@@ -25,7 +25,9 @@ let shared = {
   executablePath: '',
   browserName: '',
   /** 对话点「停止」时置 true，工具轮询后抛错 */
-  aborted: false
+  aborted: false,
+  /** 下一次浏览器 download 事件落盘选项（filename/path/dir/skipIfExists） */
+  pendingDownloadSave: null
 };
 
 function requestAbort() {
@@ -117,6 +119,20 @@ function detectBrowserName(exePath) {
   if (p.includes('chrome')) return 'Chrome';
   if (p.includes('chromium')) return 'Chromium';
   return path.basename(exePath || '') || 'browser';
+}
+
+function setPendingDownloadSave(opts) {
+  shared.pendingDownloadSave = opts && typeof opts === 'object' ? { ...opts } : null;
+}
+
+function takePendingDownloadSave() {
+  const o = shared.pendingDownloadSave;
+  shared.pendingDownloadSave = null;
+  return o;
+}
+
+function peekPendingDownloadSave() {
+  return shared.pendingDownloadSave;
 }
 
 function pushDownloadRecord(rec) {
@@ -455,6 +471,9 @@ module.exports = {
   getState,
   closeAll,
   pushDownloadRecord,
+  setPendingDownloadSave,
+  takePendingDownloadSave,
+  peekPendingDownloadSave,
   waitNextDownload,
   requestAbort,
   clearAbort,

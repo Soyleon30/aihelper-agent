@@ -11,6 +11,7 @@ const {
   resolveDownloadRoot,
   pickDownloadFilename,
   uniquePath,
+  resolveSaveTarget,
   ensureDir
 } = require('./download-path');
 
@@ -138,30 +139,33 @@ function createDownloadTools(options = {}) {
         }
       }
 
-      // 目标路径
-      let dest;
-      if (args.path) {
-        dest = path.isAbsolute(args.path)
-          ? args.path
-          : path.join(root, args.path);
-        await fsp.mkdir(path.dirname(dest), { recursive: true });
-      } else {
-        const fname = args.filename || null;
-        // 先用 URL 名，响应头后再可能改名
-        dest = path.join(root, fname || safeNameFromUrl(url));
-      }
-
-      if (!force && skipExisting && fs.existsSync(dest)) {
-        const meta = fileMeta(dest);
-        return {
-          ok: true,
-          skipped: true,
-          reason: 'file_exists',
+      // 用户指定 path/dir/filename 时先按同名策略落盘；未指定则等响应头再定名
+      const userNamed = !!(args.path || args.filename || args.dir || args.saveDir);
+      let dest = null;
+      if (userNamed) {
+        const target = resolveSaveTarget({
+          path: args.path,
+          dir: args.dir || args.saveDir,
+          filename: args.filename,
           url,
-          path: dest,
-          size: meta.size,
-          message: '目标文件已存在，跳过下载'
-        };
+          defaultDir: root,
+          userDataPath,
+          skipIfExists: skipExisting,
+          force
+        });
+        if (target.skipped) {
+          return {
+            ok: true,
+            skipped: true,
+            reason: target.reason || 'file_exists',
+            url,
+            path: target.path,
+            filename: target.filename,
+            size: target.size,
+            message: target.message || '目标文件已存在，跳过下载'
+          };
+        }
+        dest = target.path;
       }
 
       const timeoutMs = args.timeoutMs || cfg.timeoutMs || 120000;
@@ -181,11 +185,28 @@ function createDownloadTools(options = {}) {
         }
 
         const cd = res.headers.get('content-disposition') || '';
-        if (!args.path && !args.filename) {
-          const name = safeNameFromUrl(res.url || url, cd);
-          dest = uniquePath(root, name);
-        } else if (!force && fs.existsSync(dest)) {
-          dest = uniquePath(path.dirname(dest), path.basename(dest));
+        if (!userNamed) {
+          const target = resolveSaveTarget({
+            url: res.url || url,
+            contentDisposition: cd,
+            defaultDir: root,
+            userDataPath,
+            skipIfExists: skipExisting,
+            force
+          });
+          if (target.skipped) {
+            return {
+              ok: true,
+              skipped: true,
+              reason: target.reason || 'file_exists',
+              url,
+              path: target.path,
+              filename: target.filename,
+              size: target.size,
+              message: target.message || '目标文件已存在，跳过下载'
+            };
+          }
+          dest = target.path;
         }
 
         await fsp.mkdir(path.dirname(dest), { recursive: true });

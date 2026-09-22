@@ -13,7 +13,8 @@ const {
   compactToolResult,
   buildRoundBudgetHint,
   buildForceFinalMessage,
-  isDuplicateToolCall
+  isDuplicateToolCall,
+  checkSpuriousBrowserClick
 } = require('./guardrails');
 
 function createAgentService(options = {}) {
@@ -299,6 +300,30 @@ function createAgentService(options = {}) {
           resultStr: JSON.stringify(dup),
           error: dup.error,
           result: dup
+        };
+      }
+
+      const spurious = checkSpuriousBrowserClick(name, args, userMessage);
+      if (spurious) {
+        log('warn', 'tool.spurious_click', {
+          sessionId,
+          name,
+          text: args && args.text
+        });
+        emit({
+          type: 'tool_end',
+          name,
+          args,
+          result: spurious,
+          error: spurious.error,
+          id: tc.id
+        });
+        trace.push({ name, args, result: spurious });
+        return {
+          tc,
+          resultStr: JSON.stringify(spurious),
+          error: spurious.error,
+          result: spurious
         };
       }
 

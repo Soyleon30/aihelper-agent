@@ -6,6 +6,15 @@
 
 ---
 
+## [1.6.7] — 2026-09-22
+
+### 下载同名检查 + 指定路径/文件名 + 拦乱点
+- 统一 `resolveSaveTarget`：`download_file` / `browser_download` / Playwright 落盘支持 `path` / `dir` / `filename`
+- 同名文件默认 **跳过**（`skipIfExists`，`force` 可覆盖），不再静默改成 `file(1).ext`
+- 浏览器全局 download 监听吃 `pendingDownloadSave`，可指定保存位置与名称
+- 护栏：禁止把任务词当菜单乱点；`browser_click(text:"日志"|"查询"|…)` 若用户原话未出现则拦截
+- 工具描述与 system 规则同步：先 get_text 再点用户点名的控件
+
 ## [1.6.6] — 2026-09-22
 
 ### 停止为何有时无效 + 加强
