@@ -23,8 +23,38 @@ let shared = {
   downloadWaiters: [],
   downloadDir: '',
   executablePath: '',
-  browserName: ''
+  browserName: '',
+  /** 对话点「停止」时置 true，工具轮询后抛错 */
+  aborted: false
 };
+
+function requestAbort() {
+  shared.aborted = true;
+  // 打断等待下载的 Promise
+  const waiters = shared.downloadWaiters || [];
+  shared.downloadWaiters = [];
+  for (const w of waiters) {
+    try {
+      w.reject(new Error('已取消'));
+    } catch (_) {}
+  }
+}
+
+function clearAbort() {
+  shared.aborted = false;
+}
+
+function isAborted() {
+  return !!shared.aborted;
+}
+
+function throwIfAborted() {
+  if (shared.aborted) {
+    const err = new Error('已取消');
+    err.name = 'AbortError';
+    throw err;
+  }
+}
 
 function detectBrowserName(exePath) {
   const p = String(exePath || '').toLowerCase();
@@ -373,6 +403,10 @@ module.exports = {
   closeAll,
   pushDownloadRecord,
   waitNextDownload,
+  requestAbort,
+  clearAbort,
+  isAborted,
+  throwIfAborted,
   findLocalBrowser,
   findBundledChromium,
   findSystemBrowser,

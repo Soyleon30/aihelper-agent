@@ -265,7 +265,7 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_click',
       description:
-        '点击页面元素（CSS 选择器或文本）。自动优先可见节点，失败时 force/JS 回退。若点击会触发文件下载，设 waitDownload=true 可等下载完成并返回保存路径/文件名。',
+        '点击页面元素（CSS 选择器或文本）。优先 Element/通用 modal 内可见按钮，短超时+force+JS 回退，缓解 el-dialog 超时。下载按钮优先 browser_download；waitDownload=true 可等文件落盘。',
       parameters: {
         type: 'object',
         properties: {

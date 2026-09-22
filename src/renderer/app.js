@@ -686,7 +686,12 @@
   });
 
   btnAbort.addEventListener('click', async () => {
-    await window.aihelper.abort();
+    // 立即解锁 UI，避免等工具超时才像「停不了」
+    setBusy(false);
+    addMessage('system', '正在停止…');
+    try {
+      await window.aihelper.abort();
+    } catch (_) {}
   });
 
   $('btnNewSession').addEventListener('click', async () => {
@@ -742,6 +747,10 @@
       if (trim && mhKeep > 0 && state.history.length > mhKeep * 2) {
         state.history = state.history.slice(-(mhKeep * 2));
       }
+    } else if (result.cancelled || /已取消/.test(String(result.error || ''))) {
+      // 停止按钮已提示「任务已停止」，勿再刷一条错误
+      state.history.push({ role: 'user', content: text });
+      state.history.push({ role: 'assistant', content: '（已停止）' });
     } else {
       addMessage('assistant', `错误: ${result.error}`, 'error');
       state.history.push({ role: 'user', content: text });

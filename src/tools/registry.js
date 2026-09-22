@@ -4,6 +4,7 @@ const { createHttpTools } = require('./http');
 const { createBrowserTools } = require('./browser');
 const { createDownloadTools } = require('./download');
 const { createMailTools } = require('./mail');
+const browserSession = require('./browser-session');
 
 function createToolRegistry(options = {}) {
   const config = options.config || {};
@@ -66,9 +67,27 @@ function createToolRegistry(options = {}) {
   }
 
   async function execute(name, args) {
+    if (browserSession.isAborted()) {
+      const err = new Error('已取消');
+      err.name = 'AbortError';
+      throw err;
+    }
     const fn = handlers[name];
     if (!fn) throw new Error(`未知工具: ${name}`);
     return fn(args || {});
+  }
+
+  function abortRunning() {
+    browserSession.requestAbort();
+    if (typeof handlers._abortRunning === 'function') {
+      try {
+        handlers._abortRunning();
+      } catch (_) {}
+    }
+  }
+
+  function clearAbort() {
+    browserSession.clearAbort();
   }
 
   async function shutdown(opts = {}) {
@@ -80,7 +99,14 @@ function createToolRegistry(options = {}) {
     if (handlers._shutdown) await handlers._shutdown();
   }
 
-  return { getDefinitions, execute, shutdown, handlers };
+  return {
+    getDefinitions,
+    execute,
+    shutdown,
+    abortRunning,
+    clearAbort,
+    handlers
+  };
 }
 
 module.exports = { createToolRegistry };

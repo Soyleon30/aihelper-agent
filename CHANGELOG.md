@@ -6,12 +6,16 @@
 
 ---
 
+## [1.6.5] — 2026-09-22
+
+### Element modal 点击 + 停止对话
+- `browser_click`：优先 el-dialog/message-box 等弹层内可见按钮；短超时 → force → JS（modal 内优先）
+- 「停止」：`abort` 置位 + 打断 download 等待；工具执行前/中检查已取消；UI 立即解锁，不再卡死
+
 ## [1.6.4] — 2026-09-22
 
-### 打包：exe 被占用导致 UNKNOWN open
-- `build-offline` 打包前结束占用 `AIHelper Agent.exe` / electron 的进程，并改名旧 `dist/win-unpacked`
-- 默认跳过 NSIS/portable（常因网络失败）；需要时 `set BUILD_NSIS=1`
-- `assemble-offline` 校验 asar 版本与 package.json 一致，避免 zip 名新、内容仍 1.4.0
+### 打包：exe 被占用
+- build-offline 打包前释放占用；assemble 校验 asar 版本
 
 ## [1.6.3] — 2026-09-22
 

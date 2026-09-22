@@ -91,8 +91,15 @@ function createAgentService(options = {}) {
 
   function abort() {
     if (abortController) {
-      abortController.abort();
-      abortController = null;
+      try {
+        abortController.abort();
+      } catch (_) {}
+      // 勿立刻置 null：工具轮次仍靠 signal.aborted 判断；finally 再清
+      try {
+        if (tools && typeof tools.abortRunning === 'function') {
+          tools.abortRunning();
+        }
+      } catch (_) {}
       emit({ type: 'aborted' });
       log('info', 'chat.aborted', {});
       return { ok: true };
@@ -101,6 +108,9 @@ function createAgentService(options = {}) {
   }
 
   async function chat(payload) {
+    try {
+      if (tools && typeof tools.clearAbort === 'function') tools.clearAbort();
+    } catch (_) {}
     const userMessage = payload.message || '';
     const history = Array.isArray(payload.history) ? payload.history : [];
     const ao = agentOpts();
@@ -292,13 +302,26 @@ function createAgentService(options = {}) {
         };
       }
 
+      if (signal.aborted) {
+        const err = new Error('已取消');
+        err.name = 'AbortError';
+        throw err;
+      }
       emit({ type: 'tool_start', name, args, id: tc.id });
       const tTool = Date.now();
       let result;
       let error = null;
       try {
         result = await tools.execute(name, args);
+        if (signal.aborted) {
+          const err = new Error('已取消');
+          err.name = 'AbortError';
+          throw err;
+        }
       } catch (err) {
+        if (err && (err.name === 'AbortError' || /已取消/.test(String(err.message || err)))) {
+          throw err;
+        }
         error = err.message || String(err);
         result = { error };
       }
@@ -595,11 +618,16 @@ function createAgentService(options = {}) {
       );
       return finishOk(local, null, { truncated: true });
     } catch (err) {
-      const message = err.name === 'AbortError' ? '已取消' : err.message || String(err);
-      emit({ type: 'error', error: message, trace });
-      log('error', 'chat.end', {
+      const cancelled =
+        (err && err.name === 'AbortError') || /已取消/.test(String(err && err.message));
+      const message = cancelled ? '已取消' : err.message || String(err);
+      if (!cancelled) {
+        emit({ type: 'error', error: message, trace });
+      }
+      log(cancelled ? 'info' : 'error', 'chat.end', {
         sessionId,
         ok: false,
+        cancelled: !!cancelled,
         error: message,
         ms: Date.now() - tSession,
         llmRounds,
@@ -609,6 +637,7 @@ function createAgentService(options = {}) {
         logger.usage('chat.end', {
           sessionId,
           ok: false,
+          cancelled: !!cancelled,
           ms: Date.now() - tSession,
           toolCount
         });
@@ -616,14 +645,17 @@ function createAgentService(options = {}) {
           logger.chat({
             sessionId,
             role: 'assistant',
-            content: `[错误] ${message}`,
-            meta: { ok: false, error: message, toolCount }
+            content: cancelled ? '[已停止]' : `[错误] ${message}`,
+            meta: { ok: false, cancelled: !!cancelled, error: message, toolCount }
           });
         }
       }
-      return { ok: false, error: message, trace };
+      return { ok: false, error: message, cancelled: !!cancelled, trace };
     } finally {
       abortController = null;
+      try {
+        if (tools && typeof tools.clearAbort === 'function') tools.clearAbort();
+      } catch (_) {}
     }
   }
 
