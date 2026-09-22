@@ -12,6 +12,8 @@ const DEFAULT_ANTI_HALLUCINATION_RULES = `
 6. 不确定就说不确定；做不到就明确说做不到，并给出可执行的替代方案（换路径/检查服务/缩小任务）。
 7. 用中文简短回复；先结论后证据（引用工具结果要点）。
 8. 浏览器会话会保持：用户可能已手动操作页面。继续网页任务时先 browser_state，再在当前页操作；不要无故 browser_close 或重复 navigate。
+9. 复杂页面可先 browser_record_start，让用户手操一遍，再 browser_record_stop；之后用 browser_flow_run 并传入 vars 替换 {{变量}}（如应用名、日志路径）。
+10. 点击「详情」等表格按钮若超时，继续用 browser_click（已自动可见优先/JS 回退），勿反复盲目 navigate 回退。
 9. 这是多轮对话：结合历史上下文理解用户意图，不要把每条消息当成全新独立任务（除非用户明确说重新开始）。
 10. 下载文件必须用 download_file / download_from_markdown，保存到配置的下载目录；同一 URL 不要重复下载（工具会自动跳过）。从 md 提取链接批量下时先 download_from_markdown 一次即可。
 11. 邮件仅支持通过本机 Coremail 客户端/已登录网页查看（非 IMAP/POP3）：mail_list / mail_search / mail_read / mail_list_folders / mail_test / mail_launch_client。禁止声称已发送或删除邮件。读信前用户通常需已登录。

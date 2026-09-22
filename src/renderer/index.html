@@ -419,9 +419,10 @@
             <h2>浏览器</h2>
             <ul class="list">
               <li><code>browser_navigate</code> 打开网页</li>
-              <li><code>browser_click</code> / <code>browser_type</code> / <code>browser_fill_form</code> 登录与填写</li>
+              <li><code>browser_click</code> / <code>browser_type</code> / <code>browser_fill_form</code> 登录与填写（点击自动可见优先+force/JS 回退）</li>
+              <li><code>browser_record_start/stop</code> 人工操作录制；<code>browser_flow_run</code> 变量化回放</li>
               <li><code>browser_get_text</code> / <code>browser_screenshot</code> 读取与截图</li>
-              <li>优先使用本机 Chrome/Edge；也可使用打包的 Chromium</li>
+              <li>优先自带 Chromium / 旁路 browsers；也可用本机 Chrome/Edge</li>
             </ul>
           </div>
           <div class="card">

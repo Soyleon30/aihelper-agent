@@ -264,13 +264,80 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'browser_click',
-      description: '点击页面元素（CSS 选择器或文本）',
+      description:
+        '点击页面元素（CSS 选择器或文本）。自动优先可见节点，失败时 force/JS 回退，适合 Element 表格「详情」等易点到隐藏列的场景。',
       parameters: {
         type: 'object',
         properties: {
           selector: { type: 'string', description: 'CSS 选择器' },
           text: { type: 'string', description: '可见文本（与 selector 二选一）' },
-          timeoutMs: { type: 'number' }
+          timeoutMs: { type: 'number' },
+          force: { type: 'boolean', description: 'true=强制点击；false=禁用 force 回退' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_record_start',
+      description:
+        '开始录制用户在浏览器中的点击/输入。请先打开目标页，再调用本工具，然后人工操作；结束后 browser_record_stop。',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '流程名，默认 flow-时间戳' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_record_stop',
+      description:
+        '结束录制并保存为流程 JSON（userData/flows）。输入内容默认变量化成 {{变量}}，回放时用 vars 覆盖。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '可选保存路径' },
+          detectVariables: { type: 'boolean', description: '是否自动把输入标成变量，默认 true' },
+          variables: { type: 'object', description: '可选：预设/覆盖变量示例值' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_record_status',
+      description: '查看当前是否在录制及已录步骤数',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_flow_list',
+      description: '列出已保存的操作流程（录制产物）',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_flow_run',
+      description:
+        '按录制流程回放。vars 覆盖变量，例如 {"应用名":"bsdmp","日志路径":"/app/log"}。',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '流程名（flows 目录下）' },
+          path: { type: 'string', description: '流程 JSON 路径' },
+          vars: {
+            type: 'object',
+            description: '变量键值，替换步骤中的 {{key}}'
+          }
         }
       }
     }

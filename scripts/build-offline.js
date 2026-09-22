@@ -128,24 +128,38 @@ function main() {
     }
   }
 
-  // Playwright 浏览器
+  function hasChromium(dir) {
+    if (!dir || !fs.existsSync(dir)) return false;
+    try {
+      return fs.readdirSync(dir).some((n) => /chromium/i.test(n));
+    } catch (_) {
+      return false;
+    }
+  }
+
   const home = process.env.USERPROFILE || process.env.HOME || '';
   const pwDirs = [
     process.env.PLAYWRIGHT_BROWSERS_PATH,
+    path.join(root, 'offline-cache', 'ms-playwright'),
+    path.join(root, 'offline-assets', 'ms-playwright'),
+    path.join(dist, 'win-unpacked', 'resources', 'playwright-browsers'),
+    path.join(outDir, 'browsers', 'ms-playwright'),
     path.join(home, 'AppData', 'Local', 'ms-playwright')
   ].filter(Boolean);
 
+  let browserSrc = null;
   for (const d of pwDirs) {
-    if (fs.existsSync(d)) {
-      const hasBrowser = fs.readdirSync(d).some((n) => /chromium|chrome/i.test(n));
-      if (hasBrowser) {
-        console.log('附带浏览器缓存:', d);
-        copyDir(d, path.join(outDir, 'browsers', 'ms-playwright'));
-      } else {
-        console.warn('ms-playwright 目录存在但无 chromium，跳过附带');
-      }
+    if (hasChromium(d)) {
+      browserSrc = d;
       break;
     }
+  }
+  if (browserSrc) {
+    console.log('附带浏览器缓存:', browserSrc);
+    copyDir(browserSrc, path.join(outDir, 'browsers', 'ms-playwright'));
+    copyDir(browserSrc, path.join(outDir, 'win-unpacked', 'resources', 'playwright-browsers'));
+  } else {
+    console.warn('未找到 Chromium，绿色版将依赖系统 Chrome/Edge 或安装浏览器缓存.bat');
   }
 
   copyDir(path.join(root, 'config'), path.join(outDir, 'config-sample'));

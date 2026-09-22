@@ -6,6 +6,24 @@
 
 ---
 
+## [1.4.0] — 2026-09-22
+
+### 浏览器点击鲁棒
+- `browser_click`：优先可见节点 → force → 页面内 JS 点击回退
+- 缓解 Element UI 双表/隐藏列导致「详情」等按钮超时与乱回退
+
+### 操作录制与回放
+- `browser_record_start` / `browser_record_stop` / `browser_record_status`
+- 人工点击/输入写入流程 JSON（`userData/flows`）
+- 输入自动变量化 `{{变量}}`；`browser_flow_run` + `vars` 回放
+- `browser_flow_list` 查看已存流程
+
+### 离线自带 Chromium
+- 启动时查找：exe 旁 `resources/playwright-browsers`、上级 `browsers/ms-playwright`、本地缓存
+- `build:offline` / `assemble:offline` 把已有 chromium 打进绿色包（侧车 + resources）
+
+---
+
 ## [1.3.0] — 2026-09-20
 
 ### 日志脱敏

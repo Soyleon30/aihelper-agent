@@ -42,6 +42,75 @@ function main() {
   console.log('复制 win-unpacked …');
   copyDir(winUnpacked, path.join(outDir, 'win-unpacked'));
 
+  function hasChromium(dir) {
+    if (!dir || !fs.existsSync(dir)) return false;
+    try {
+      return fs.readdirSync(dir).some((n) => /chromium/i.test(n));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function findChromeExe(dir, depth = 0) {
+    if (!dir || depth > 6 || !fs.existsSync(dir)) return null;
+    const direct = [
+      path.join(dir, 'chrome-win64', 'chrome.exe'),
+      path.join(dir, 'chrome-win', 'chrome.exe'),
+      path.join(dir, 'chrome.exe')
+    ];
+    for (const p of direct) if (fs.existsSync(p)) return p;
+    let names = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch (_) {
+      return null;
+    }
+    for (const n of names) {
+      if (!/chromium/i.test(n) || /headless/i.test(n)) continue;
+      const hit = findChromeExe(path.join(dir, n), depth + 1);
+      if (hit) return hit;
+    }
+    for (const n of names) {
+      const full = path.join(dir, n);
+      try {
+        if (fs.statSync(full).isDirectory()) {
+          const hit = findChromeExe(full, depth + 1);
+          if (hit) return hit;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  const home = process.env.USERPROFILE || '';
+  const browserCandidates = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH,
+    path.join(root, 'dist-offline', 'browsers', 'ms-playwright'),
+    path.join(root, 'offline-cache', 'ms-playwright'),
+    path.join(root, 'offline-assets', 'ms-playwright'),
+    path.join(dist, 'win-unpacked', 'resources', 'playwright-browsers'),
+    path.join(home, 'AppData', 'Local', 'ms-playwright')
+  ].filter(Boolean);
+
+  let browserSrc = null;
+  for (const c of browserCandidates) {
+    if (hasChromium(c) && findChromeExe(c)) {
+      browserSrc = c;
+      break;
+    }
+  }
+
+  if (browserSrc) {
+    console.log('附带 browsers …', browserSrc);
+    const side = path.join(outDir, 'browsers', 'ms-playwright');
+    copyDir(browserSrc, side);
+    const resPw = path.join(outDir, 'win-unpacked', 'resources', 'playwright-browsers');
+    console.log('写入 win-unpacked/resources/playwright-browsers …');
+    copyDir(browserSrc, resPw);
+  } else {
+    console.warn('未找到 Chromium 缓存，绿色版将依赖系统 Chrome/Edge');
+  }
+
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const ver = pkg.version || '0.0.0';
   const zipName = `AIHelper-Agent-${ver}-win-x64-green.zip`;
@@ -61,16 +130,6 @@ function main() {
       );
     } catch (e2) {
       console.warn('ZIP 失败，可直接拷贝 win-unpacked:', e2.message);
-    }
-  }
-
-  const home = process.env.USERPROFILE || '';
-  const pw = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(home, 'AppData', 'Local', 'ms-playwright');
-  if (fs.existsSync(pw)) {
-    const names = fs.readdirSync(pw);
-    if (names.some((n) => /chromium|chrome/i.test(n))) {
-      console.log('附带 browsers …');
-      copyDir(pw, path.join(outDir, 'browsers', 'ms-playwright'));
     }
   }
 
