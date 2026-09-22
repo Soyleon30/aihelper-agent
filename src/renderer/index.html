@@ -234,9 +234,9 @@
           <div class="card">
             <h2>下载与截图目录</h2>
             <label class="field">
-              <span>下载保存路径（空= userData/downloads）</span>
+              <span>下载保存路径（空= 下载\AIHelper）</span>
               <div class="row" style="gap:8px;">
-                <input id="cfgDownloadDir" type="text" placeholder="例如 D:\aihelper-downloads" style="flex:1;" />
+                <input id="cfgDownloadDir" type="text" placeholder="例如 D:\aihelper-downloads 或空= %USERPROFILE%\Downloads\AIHelper" style="flex:1;" />
                 <button id="btnPickDownloadDir" type="button" class="btn ghost">浏览</button>
                 <button id="btnOpenDownloadDir" type="button" class="btn ghost">打开</button>
               </div>
@@ -261,7 +261,7 @@
               </label>
             </div>
             <p class="muted" style="margin:4px 0 0;font-size:12px;">
-              截图默认在「图片\AIHelper-Screenshots」。浏览器 download 与 download_file 进下载目录。保存配置后生效。
+              下载默认「下载\AIHelper」；截图默认「图片\AIHelper-Screenshots」。浏览器内下载与 download_file 同一目录；中文文件名会自动解码。保存配置后生效（浏览器需 browser_close 后重开才换目录）。
             </p>
           </div>
 
@@ -302,7 +302,7 @@
               </label>
             </div>
             <p class="muted" style="margin:4px 0 0;font-size:12px;">
-              保持会话开启时，对话切换/配置保存不会关闭页面；你可手动点网页，再让助手 browser_state 后继续操作。仅 browser_close 或退出应用才关闭。
+              默认本机可见 Chrome（非无头）：助手用 DOM 点击/输入/读文本，你可同步看到窗口操作。保持会话时对话切换不关页；仅 browser_close 或退出应用才关闭。页面下载用 browser_click(waitDownload) / browser_wait_download。
             </p>
             <label class="field">
               <span>文件允许根目录（每行一个，空=不限制）</span>

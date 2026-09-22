@@ -7,6 +7,12 @@ const path = require('path');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { URL } = require('url');
+const {
+  resolveDownloadRoot,
+  pickDownloadFilename,
+  uniquePath,
+  ensureDir
+} = require('./download-path');
 
 function createDownloadTools(options = {}) {
   const cfg = options.config || {};
@@ -15,9 +21,7 @@ function createDownloadTools(options = {}) {
   const logger = options.logger || null;
 
   function downloadRoot() {
-    const d = (cfg.dir || pathsCfg.downloadDir || '').trim();
-    if (d) return path.resolve(d);
-    return path.join(userDataPath, 'downloads');
+    return resolveDownloadRoot(cfg.dir || pathsCfg.downloadDir || '', userDataPath);
   }
 
   function indexPath() {
@@ -25,9 +29,7 @@ function createDownloadTools(options = {}) {
   }
 
   function ensureRoot() {
-    const root = downloadRoot();
-    fs.mkdirSync(root, { recursive: true });
-    return root;
+    return ensureDir(downloadRoot());
   }
 
   function readIndex() {
@@ -60,37 +62,9 @@ function createDownloadTools(options = {}) {
   }
 
   function safeNameFromUrl(url, contentDisposition) {
-    let name = '';
-    if (contentDisposition) {
-      const m =
-        /filename\*=UTF-8''([^;]+)|filename="([^"]+)"|filename=([^;]+)/i.exec(
-          contentDisposition
-        );
-      name = decodeURIComponent((m && (m[1] || m[2] || m[3]) || '').trim());
-    }
-    if (!name) {
-      try {
-        const u = new URL(url);
-        name = path.basename(u.pathname) || 'download';
-      } catch {
-        name = 'download';
-      }
-    }
-    name = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 180);
-    if (!name || name === '.' || name === '..') name = 'download';
-    return name;
-  }
-
-  function uniquePath(dir, base) {
-    let p = path.join(dir, base);
-    if (!fs.existsSync(p)) return p;
-    const ext = path.extname(base);
-    const stem = path.basename(base, ext);
-    for (let i = 1; i < 1000; i++) {
-      p = path.join(dir, `${stem}(${i})${ext}`);
-      if (!fs.existsSync(p)) return p;
-    }
-    return path.join(dir, `${stem}_${Date.now()}${ext}`);
+    return (
+      pickDownloadFilename({ url, contentDisposition }) || `download-${Date.now()}`
+    );
   }
 
   function fileMeta(filePath) {

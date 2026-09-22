@@ -365,7 +365,8 @@ function createAgentService(options = {}) {
         llmRounds += 1;
         const tLlm = Date.now();
 
-        // 首轮且任务像要动真环境：tool_choice=required，逼模型必须调工具（不支持的服务端会忽略）
+        // 首轮且任务像要动真环境：tool_choice=required，逼模型必须调工具
+        // 部分 thinking 模型（如 deepseek-flash）不支持 required，400 后自动降为 auto
         let toolChoice;
         if (
           !lastRound &&
@@ -380,7 +381,7 @@ function createAgentService(options = {}) {
           toolChoice = 'required';
         }
 
-        const data = await provider.chatCompletions(messages, {
+        const llmOpts = {
           tools:
             lastRound || forcedFinal
               ? undefined
@@ -389,7 +390,34 @@ function createAgentService(options = {}) {
                 : undefined,
           tool_choice: toolChoice,
           signal
-        });
+        };
+
+        let data;
+        try {
+          data = await provider.chatCompletions(messages, llmOpts);
+        } catch (err) {
+          const em = String(err && err.message ? err.message : err);
+          const isToolChoiceReject =
+            /tool_choice/i.test(em) &&
+            (/thinking\s*mode/i.test(em) ||
+              /does not support/i.test(em) ||
+              /\b400\b/.test(em));
+          if (isToolChoiceReject && toolChoice && toolChoice !== 'auto') {
+            log('warn', 'llm.tool_choice_fallback', {
+              sessionId,
+              from: toolChoice,
+              to: 'auto',
+              error: em.slice(0, 200)
+            });
+            toolChoice = 'auto';
+            data = await provider.chatCompletions(messages, {
+              ...llmOpts,
+              tool_choice: 'auto'
+            });
+          } else {
+            throw err;
+          }
+        }
 
         if (budgetHint && !lastRound) {
           const last = messages[messages.length - 1];

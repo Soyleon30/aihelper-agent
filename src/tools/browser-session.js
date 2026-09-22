@@ -17,8 +17,46 @@ let shared = {
   cfg: {},
   userDataPath: '',
   launchedAt: null,
-  recording: null
+  recording: null,
+  /** @type {Array<{path:string,filename:string,url:string,at:string,ok:boolean,error?:string}>} */
+  recentDownloads: [],
+  downloadWaiters: [],
+  downloadDir: ''
 };
+
+function pushDownloadRecord(rec) {
+  if (!Array.isArray(shared.recentDownloads)) shared.recentDownloads = [];
+  shared.recentDownloads.push(rec);
+  if (shared.recentDownloads.length > 50) {
+    shared.recentDownloads = shared.recentDownloads.slice(-50);
+  }
+  const waiters = shared.downloadWaiters || [];
+  shared.downloadWaiters = [];
+  for (const w of waiters) {
+    try {
+      w.resolve(rec);
+    } catch (_) {}
+  }
+}
+
+function waitNextDownload(timeoutMs = 60000) {
+  return new Promise((resolve, reject) => {
+    const ms = Math.max(1000, Number(timeoutMs) || 60000);
+    const timer = setTimeout(() => {
+      shared.downloadWaiters = (shared.downloadWaiters || []).filter((x) => x !== entry);
+      reject(new Error(`等待下载超时（${ms}ms）`));
+    }, ms);
+    const entry = {
+      resolve: (rec) => {
+        clearTimeout(timer);
+        resolve(rec);
+      },
+      reject
+    };
+    if (!Array.isArray(shared.downloadWaiters)) shared.downloadWaiters = [];
+    shared.downloadWaiters.push(entry);
+  });
+}
 
 function setLogger(logger) {
   shared.logger = logger;
@@ -49,10 +87,13 @@ function isPageAlive() {
 }
 
 async function getState() {
+  const recent = (shared.recentDownloads || []).slice(-5);
   if (!isPageAlive()) {
     return {
       open: false,
       sessionId: shared.sessionId,
+      downloadDir: shared.downloadDir || '',
+      recentDownloads: recent,
       message: '浏览器未打开或已关闭'
     };
   }
@@ -71,10 +112,13 @@ async function getState() {
       title,
       textPreview,
       launchedAt: shared.launchedAt,
-      hint: '可在此页面基础上继续 click/type，无需重新 navigate（除非要换站）'
+      downloadDir: shared.downloadDir || '',
+      recentDownloads: recent,
+      hint:
+        '可见本机 Chrome 窗口，DOM 操作（非截图）。可在当前页继续 click/type；下载用 browser_wait_download 或看 recentDownloads'
     };
   } catch (err) {
-    return { open: false, error: err.message || String(err) };
+    return { open: false, error: err.message || String(err), recentDownloads: recent };
   }
 }
 
@@ -248,6 +292,8 @@ module.exports = {
   isPageAlive,
   getState,
   closeAll,
+  pushDownloadRecord,
+  waitNextDownload,
   findLocalBrowser,
   findBundledChromium,
   findSystemBrowser,

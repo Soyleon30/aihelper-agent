@@ -240,7 +240,7 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_state',
       description:
-        '查看当前浏览器会话状态（是否已打开、当前 URL/标题/正文预览）。用户手动操作后继续任务时，应先调用本工具，再在当前页面上 click/type，不要轻易重新 navigate。',
+        '查看当前浏览器会话（本机可见 Chrome 窗口）：是否打开、URL/标题/正文预览、downloadDir、recentDownloads。用户手操后继续任务时先调本工具，再在当前页 click/type，勿轻易重新 navigate。感知靠 DOM 文本，不是截图循环。',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -249,7 +249,7 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_navigate',
       description:
-        '打开或跳转浏览器页面。若 browser_state 显示已在目标站，优先在当前页继续操作，勿重复打开。',
+        '打开或跳转浏览器页面（本机可见窗口，默认本机 Chrome）。若 browser_state 已在目标站，优先在当前页继续，勿重复打开。',
       parameters: {
         type: 'object',
         properties: {
@@ -265,14 +265,46 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_click',
       description:
-        '点击页面元素（CSS 选择器或文本）。自动优先可见节点，失败时 force/JS 回退，适合 Element 表格「详情」等易点到隐藏列的场景。',
+        '点击页面元素（CSS 选择器或文本）。自动优先可见节点，失败时 force/JS 回退。若点击会触发文件下载，设 waitDownload=true 可等下载完成并返回保存路径/文件名。',
       parameters: {
         type: 'object',
         properties: {
           selector: { type: 'string', description: 'CSS 选择器' },
           text: { type: 'string', description: '可见文本（与 selector 二选一）' },
           timeoutMs: { type: 'number' },
-          force: { type: 'boolean', description: 'true=强制点击；false=禁用 force 回退' }
+          force: { type: 'boolean', description: 'true=强制点击；false=禁用 force 回退' },
+          waitDownload: {
+            type: 'boolean',
+            description: 'true=等待本次点击触发的下载完成并返回 path'
+          },
+          downloadTimeoutMs: { type: 'number', description: '等下载超时，默认 60000' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_wait_download',
+      description:
+        '等待下一次浏览器内下载完成（页面点下载按钮后）。返回保存绝对路径与解码后的文件名；默认目录为 下载\\AIHelper。',
+      parameters: {
+        type: 'object',
+        properties: {
+          timeoutMs: { type: 'number', description: '超时毫秒，默认 60000' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_list_downloads',
+      description: '列出本会话近期浏览器下载记录（路径、文件名、URL）',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: '最多条数，默认 20' }
         }
       }
     }

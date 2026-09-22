@@ -1,6 +1,12 @@
 const path = require('path');
 const fsp = require('fs').promises;
 const bs = require('./browser-session');
+const {
+  resolveDownloadRoot,
+  pickDownloadFilename,
+  uniquePath,
+  ensureDir
+} = require('./download-path');
 
 function resolveScreenshotDir(cfg, userDataPath) {
   const d = String(
@@ -13,6 +19,10 @@ function resolveScreenshotDir(cfg, userDataPath) {
       ? path.join(process.env.USERPROFILE, 'Pictures', 'AIHelper-Screenshots')
       : path.join(userDataPath, 'screenshots');
   return pictures;
+}
+
+function resolveBrowserDownloadDir(cfg, userDataPath) {
+  return resolveDownloadRoot(cfg && cfg.downloadDir, userDataPath);
 }
 
 function createBrowserTools(options = {}) {
@@ -455,6 +465,7 @@ function createBrowserTools(options = {}) {
   async function ensurePage() {
     const shared = bs.getShared();
     bs.setConfig(cfg, userDataPath);
+    shared.downloadDir = resolveBrowserDownloadDir(cfg, userDataPath);
 
     if (bs.isPageAlive()) {
       await bindPageListeners(shared.page);
@@ -484,14 +495,13 @@ function createBrowserTools(options = {}) {
       cfg.userAgent ||
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
-    const dlRoot = (() => {
-      const d = (cfg.downloadDir || '').trim();
-      if (d) return path.resolve(d);
-      return path.join(userDataPath, 'downloads');
-    })();
+    const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
     try {
-      require('fs').mkdirSync(dlRoot, { recursive: true });
+      ensureDir(dlRoot);
     } catch (_) {}
+    shared.downloadDir = dlRoot;
+    if (!Array.isArray(shared.recentDownloads)) shared.recentDownloads = [];
+    if (!Array.isArray(shared.downloadWaiters)) shared.downloadWaiters = [];
 
     const contextOpts = {
       viewport: cfg.defaultViewport || { width: 1366, height: 768 },
@@ -505,6 +515,8 @@ function createBrowserTools(options = {}) {
       isMobile: false,
       javaScriptEnabled: true,
       acceptDownloads: true,
+      // Playwright 将浏览器下载落到此目录；再 saveAs 到最终文件名（修复中文）
+      downloadsPath: dlRoot,
       extraHTTPHeaders: {
         'Accept-Language': cfg.acceptLanguage || 'zh-CN,zh;q=0.9,en;q=0.8',
         ...(cfg.extraHeaders || {})
@@ -533,27 +545,50 @@ function createBrowserTools(options = {}) {
 
     shared.page.setDefaultTimeout(cfg.timeoutMs || 30000);
 
-    // 页面触发的浏览器下载 → 统一进下载目录
+    // 页面触发的浏览器下载 → 统一进下载目录，并解码中文文件名
     shared.page.on('download', async (download) => {
-      try {
-        const suggested = download.suggestedFilename() || `download-${Date.now()}`;
-        const safe = String(suggested).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
-        let dest = path.join(dlRoot, safe);
-        if (require('fs').existsSync(dest)) {
-          const ext = path.extname(safe);
-          const stem = path.basename(safe, ext);
-          dest = path.join(dlRoot, `${stem}_${Date.now()}${ext}`);
+      const url = (() => {
+        try {
+          return download.url();
+        } catch {
+          return '';
         }
+      })();
+      const suggestedRaw = (() => {
+        try {
+          return download.suggestedFilename() || '';
+        } catch {
+          return '';
+        }
+      })();
+      try {
+        const safe =
+          pickDownloadFilename({ suggested: suggestedRaw, url }) ||
+          `download-${Date.now()}`;
+        const dest = uniquePath(dlRoot, safe);
         await download.saveAs(dest);
-        bs.logAction('browser.download', {
+        const rec = {
+          ok: true,
           path: dest,
-          url: download.url(),
-          filename: safe
-        });
+          filename: path.basename(dest),
+          url,
+          suggestedRaw,
+          at: new Date().toISOString()
+        };
+        bs.pushDownloadRecord(rec);
+        bs.logAction('browser.download', rec);
       } catch (err) {
-        bs.logAction('browser.download_error', {
-          error: err.message || String(err)
-        });
+        const rec = {
+          ok: false,
+          path: '',
+          filename: suggestedRaw || '',
+          url,
+          suggestedRaw,
+          error: err.message || String(err),
+          at: new Date().toISOString()
+        };
+        bs.pushDownloadRecord(rec);
+        bs.logAction('browser.download_error', rec);
       }
     });
 
@@ -578,6 +613,7 @@ function createBrowserTools(options = {}) {
       headless,
       stealth: stealthEnabled(),
       keepSession,
+      downloadDir: dlRoot,
       executablePath: launchOpts.executablePath || launchOpts.channel || 'bundled'
     });
     return shared.page;
@@ -774,7 +810,11 @@ function createBrowserTools(options = {}) {
 
   const tools = {
     async browser_state() {
-      return withStep('browser_state', {}, async () => bs.getState());
+      return withStep('browser_state', {}, async () => {
+        const shared = bs.getShared();
+        shared.downloadDir = resolveBrowserDownloadDir(cfg, userDataPath);
+        return bs.getState();
+      });
     },
 
     async browser_navigate(args) {
@@ -782,7 +822,13 @@ function createBrowserTools(options = {}) {
         const p = await ensurePage();
         const waitUntil = args.waitUntil || 'domcontentloaded';
         await p.goto(args.url, { waitUntil, timeout: cfg.timeoutMs || 30000 });
-        const out = { url: p.url(), title: await p.title(), keptSession: true };
+        const out = {
+          url: p.url(),
+          title: await p.title(),
+          keptSession: true,
+          downloadDir: bs.getShared().downloadDir || '',
+          visible: cfg.headless !== true
+        };
         bs.logAction('page.loaded', out);
         return out;
       });
@@ -791,15 +837,67 @@ function createBrowserTools(options = {}) {
     async browser_click(args) {
       return withStep('browser_click', args, async () => {
         const p = await ensurePage();
+        const waitDl = args.waitDownload === true;
+        const dlTimeout = args.downloadTimeoutMs || 60000;
+        let dlPromise = null;
+        if (waitDl) {
+          dlPromise = bs.waitNextDownload(dlTimeout);
+        }
         const r = await robustClick(p, args);
-        const out = { ok: true, method: r.method, via: r.via, url: p.url() };
+        const out = {
+          ok: true,
+          method: r.method,
+          via: r.via,
+          url: p.url(),
+          title: await p.title().catch(() => '')
+        };
+        if (waitDl && dlPromise) {
+          try {
+            out.download = await dlPromise;
+          } catch (err) {
+            out.download = { ok: false, error: err.message || String(err) };
+          }
+        }
         bs.logAction('page.click.agent', {
           selector: args.selector,
           text: args.text,
           method: r.method,
-          url: out.url
+          url: out.url,
+          download: out.download || null
         });
         return out;
+      });
+    },
+
+    async browser_wait_download(args) {
+      return withStep('browser_wait_download', args, async () => {
+        await ensurePage();
+        const timeoutMs = args.timeoutMs || 60000;
+        try {
+          const rec = await bs.waitNextDownload(timeoutMs);
+          return { ok: !!rec.ok, ...rec, downloadDir: bs.getShared().downloadDir || '' };
+        } catch (err) {
+          return {
+            ok: false,
+            error: err.message || String(err),
+            downloadDir: bs.getShared().downloadDir || '',
+            recentDownloads: (bs.getShared().recentDownloads || []).slice(-5)
+          };
+        }
+      });
+    },
+
+    async browser_list_downloads(args) {
+      return withStep('browser_list_downloads', args, async () => {
+        const shared = bs.getShared();
+        const limit = Math.min(50, Math.max(1, Number(args.limit) || 20));
+        const list = (shared.recentDownloads || []).slice(-limit).reverse();
+        return {
+          ok: true,
+          downloadDir: shared.downloadDir || resolveBrowserDownloadDir(cfg, userDataPath),
+          count: list.length,
+          downloads: list
+        };
       });
     },
 

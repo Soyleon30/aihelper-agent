@@ -6,6 +6,28 @@
 
 ---
 
+## [1.5.1] — 2026-09-22
+
+### 修复 thinking 模型 + tool_choice
+- DeepSeek 等 thinking 模型返回 `400: Thinking mode does not support this tool_choice` 时，自动把 `required` 降为 `auto` 并重试，不再整轮失败
+
+---
+
+## [1.5.0] — 2026-09-22
+
+### 浏览器下载路径与中文文件名
+- 默认下载目录改为 `%USERPROFILE%\Downloads\AIHelper`（不再藏在 AppData）
+- 浏览器/HTTP 下载共用文件名解码：`filename*=UTF-8''`、URL 编码、Latin-1 乱码修复
+- Playwright `downloadsPath` + `saveAs` 统一落盘；会话内记录 `recentDownloads`
+
+### 可见本机 Chrome + 下载可追踪
+- 默认仍为有界面 + 优先本机 Chrome；感知以 DOM（get_text/state）为主，非截图循环
+- 新增 `browser_wait_download` / `browser_list_downloads`
+- `browser_click` 支持 `waitDownload: true`，点击下载后直接返回 path/filename
+- `browser_state` 附带 `downloadDir` 与近期下载列表
+
+---
+
 ## [1.4.0] — 2026-09-22
 
 ### 浏览器点击鲁棒

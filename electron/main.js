@@ -235,7 +235,12 @@ function registerIpc() {
             if (d && String(d).trim()) return path.resolve(String(d).trim());
           }
         } catch (_) {}
-        return path.join(app.getPath('userData'), 'downloads');
+        // 默认：系统「下载」下 AIHelper，比 AppData 更好找
+        try {
+          return path.join(app.getPath('downloads'), 'AIHelper');
+        } catch (_) {
+          return path.join(app.getPath('home'), 'Downloads', 'AIHelper');
+        }
       })(),
       screenshots: (() => {
         try {
