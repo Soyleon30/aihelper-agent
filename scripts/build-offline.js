@@ -195,7 +195,6 @@ function main() {
   console.log('复制绿色版 win-unpacked …');
   copyDir(winUnpacked, path.join(outDir, 'win-unpacked'));
 
-  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const ver = pkg.version || '0.0.0';
   const zipName = `AIHelper-Agent-${ver}-win-x64-green.zip`;
   const zipPath = path.join(outDir, zipName);
