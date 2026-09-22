@@ -913,10 +913,17 @@ function createBrowserTools(options = {}) {
   function looksLikeFileUrl(u) {
     const s = String(u || '');
     if (!/^https?:\/\//i.test(s)) return false;
-    if (/\/th\/id\/|\/download\/|\/file\/|attachment|export|getfile/i.test(s)) return true;
+    // 业务常见：导出/附件/下载接口（路径无扩展名也算）
+    if (
+      /\/th\/id\/|\/download\/|\/file\/|\/export\/|\/attach|attachment|getfile|downloadfile|exportfile|downfile|filedownload/i.test(
+        s
+      )
+    ) {
+      return true;
+    }
     try {
       const p = new URL(s).pathname.toLowerCase();
-      return /\.(pdf|zip|rar|7z|gz|tgz|doc|docx|xls|xlsx|ppt|pptx|csv|txt|json|xml|jpe?g|jfif|png|gif|webp|bmp|svg|mp[34]|wav|avi|mkv|exe|msi|dmg|iso|apk)(\?|$)/i.test(
+      return /\.(pdf|zip|rar|7z|tar|tgz|gz|bz2|xz|doc|docx|xls|xlsx|xlsm|ppt|pptx|csv|tsv|txt|json|xml|jpe?g|jfif|png|gif|webp|bmp|svg|mp[34]|wav|avi|mkv|exe|msi|dmg|iso|apk|log|sql|dat)(\?|$)/i.test(
         p
       );
     } catch {
@@ -928,11 +935,21 @@ function createBrowserTools(options = {}) {
     try {
       const headers = res.headers();
       const cd = String(headers['content-disposition'] || headers['Content-Disposition'] || '');
-      if (/attachment|filename/i.test(cd)) return true;
+      // 标准文件下载：Content-Disposition: attachment; filename=...
+      if (/attachment|filename\s*=/i.test(cd)) return true;
       const ct = String(headers['content-type'] || headers['Content-Type'] || '').toLowerCase();
-      if (!ct) return false;
-      if (ct.includes('text/html') || ct.includes('text/css') || ct.includes('javascript')) {
-        return false;
+      if (!ct) return looksLikeFileUrl(res.url());
+      if (
+        ct.includes('text/html') ||
+        ct.includes('text/css') ||
+        ct.includes('javascript') ||
+        ct.includes('application/json') && !/attachment|filename/i.test(cd)
+      ) {
+        // json 接口体一般不是文件；除非带 attachment
+        if (ct.includes('application/json') && !/attachment|filename/i.test(cd)) return false;
+        if (ct.includes('text/html') || ct.includes('text/css') || ct.includes('javascript')) {
+          return false;
+        }
       }
       if (
         ct.startsWith('image/') ||
@@ -940,10 +957,20 @@ function createBrowserTools(options = {}) {
         ct.startsWith('video/') ||
         ct.includes('application/pdf') ||
         ct.includes('application/zip') ||
+        ct.includes('application/x-zip') ||
+        ct.includes('application/gzip') ||
+        ct.includes('application/x-gzip') ||
+        ct.includes('application/x-tar') ||
+        ct.includes('application/x-gtar') ||
+        ct.includes('application/x-bzip') ||
+        ct.includes('application/x-xz') ||
         ct.includes('application/octet-stream') ||
+        ct.includes('application/force-download') ||
         ct.includes('application/msword') ||
+        ct.includes('application/vnd.ms-excel') ||
         ct.includes('spreadsheet') ||
-        ct.includes('officedocument')
+        ct.includes('officedocument') ||
+        ct.includes('application/vnd.openxmlformats')
       ) {
         return true;
       }
@@ -1135,11 +1162,15 @@ function createBrowserTools(options = {}) {
       return 'webp';
     }
     if (buf.slice(0, 4).toString() === '%PDF') return 'pdf';
+    // zip/xlsx/docx 都是 PK
     if (buf[0] === 0x50 && buf[1] === 0x4b) return 'zip';
+    // gzip
+    if (buf[0] === 0x1f && buf[1] === 0x8b) return 'gz';
+    // ustar tar
+    if (buf.length > 265 && buf.slice(257, 262).toString() === 'ustar') return 'tar';
     if (buf.slice(0, 5).toString() === 'GIF89' || buf.slice(0, 5).toString() === 'GIF87') {
       return 'gif';
     }
-    // HTML 误下
     const head = buf.slice(0, 64).toString('utf8').toLowerCase();
     if (head.includes('<!doctype') || head.includes('<html')) return 'html';
     return '';
@@ -1359,7 +1390,7 @@ function createBrowserTools(options = {}) {
       }) ||
       `download-${Date.now()}`;
     const ext = path.extname(name);
-    if (!ext && kind) name += `.${kind === 'jpg' ? 'jpg' : kind}`;
+      if (!ext && kind) name += `.${kind === 'jpg' ? 'jpg' : kind}`;
     else if (!ext) {
       if (/jpeg|jpg/i.test(ct)) name += '.jpg';
       else if (/png/i.test(ct)) name += '.png';
@@ -1367,6 +1398,11 @@ function createBrowserTools(options = {}) {
       else if (/gif/i.test(ct)) name += '.gif';
       else if (/pdf/i.test(ct)) name += '.pdf';
       else if (/zip/i.test(ct)) name += '.zip';
+      else if (/x-tar|tar/i.test(ct)) name += '.tar';
+      else if (/gzip|x-gzip/i.test(ct)) name += '.gz';
+      else if (/spreadsheet|excel|sheet/i.test(ct)) name += '.xlsx';
+      else if (/msword|wordprocessing/i.test(ct)) name += '.docx';
+      else if (/octet-stream|force-download/i.test(ct)) name += '.bin';
     }
     // 按实际内容纠正扩展名（如 Bing 常返回 webp 却起名 .jpg）
     if (kind && kind !== 'html') {

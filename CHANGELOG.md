@@ -6,13 +6,18 @@
 
 ---
 
+## [1.6.1] — 2026-09-22
+
+### 下载识别加强（tar/excel 等）
+- URL/Content-Type 覆盖 `.tar/.tgz/.gz`、xlsx/xls、octet-stream、force-download
+- 文件头嗅探：gzip、ustar tar、zip(xlsx 同为 PK)
+- **说明**：标准「按钮→带 attachment 的 http 下载」可拦截；纯 blob/多步鉴权/无网络响应的导出仍可能需 Playwright 回退或业务适配
+
 ## [1.6.0] — 2026-09-22
 
 ### 页面下载新链路（推荐）
-- `browser_resolve_download_url`：从 DOM href/data-url 或点击拦网络，只解析真实 http(s) URL
-- `browser_download`：解析 URL → 带浏览器 Cookie 用 HTTP 保存到配置下载目录（真实文件名，不进 E:\\Temp UUID）
-- 仅 blob/无 URL 时回退 Playwright download
-- 护栏：页面下载优先 `browser_download`，已知 URL 用 `download_file`
+- `browser_resolve_download_url` / `browser_download`：解析 URL + HTTP 落盘
+- blob 无 URL 时回退 Playwright
 
 ## [1.5.8] — 2026-09-22
 

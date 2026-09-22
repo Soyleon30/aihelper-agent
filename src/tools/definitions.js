@@ -332,7 +332,7 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_download',
       description:
-        '【推荐】页面下载：解析真实 http(s) URL（DOM/点击拦截）→ 带浏览器 Cookie 用 HTTP 保存到配置下载目录。避开 Playwright Temp/UUID。参数：selector/text 或 url；返回 path/filename。',
+        '【推荐】点页面下载按钮/链接：解析真实 http(s) URL（href 或点击后拦网络 Content-Disposition）→ 用浏览器 Cookie HTTP 保存到配置目录（xlsx/tar/zip/pdf 等）。blob 无 URL 时回退 Playwright。参数 selector/text 或 url；返回 path。',
       parameters: {
         type: 'object',
         properties: {
