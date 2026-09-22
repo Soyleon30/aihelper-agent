@@ -590,6 +590,7 @@ function createBrowserTools(options = {}) {
   function bindContextDownloads(context, dlRoot) {
     if (!context || context.__aihelperDlBound) return;
     context.__aihelperDlBound = true;
+    const fsSync = require('fs');
 
     const onDownload = async (download) => {
       const url = (() => {
@@ -606,6 +607,13 @@ function createBrowserTools(options = {}) {
           return '';
         }
       })();
+      // Playwright 内部临时路径（常在 %TEMP%/playwright-artifacts-*），勿当最终路径
+      let artifactPath = '';
+      try {
+        artifactPath = (await download.path()) || '';
+      } catch (_) {
+        artifactPath = '';
+      }
       try {
         ensureDir(dlRoot);
         const safe =
@@ -613,9 +621,15 @@ function createBrowserTools(options = {}) {
           `download-${Date.now()}`;
         const dest = uniquePath(dlRoot, safe);
         await download.saveAs(dest);
+        // 清理 artifacts 里的 UUID 临时文件，避免用户在资源管理器/地址栏看到 file:///E:/Temp/...
+        if (artifactPath && path.resolve(artifactPath) !== path.resolve(dest)) {
+          try {
+            if (fsSync.existsSync(artifactPath)) fsSync.unlinkSync(artifactPath);
+          } catch (_) {}
+        }
         let size = 0;
         try {
-          size = require('fs').statSync(dest).size;
+          size = fsSync.statSync(dest).size;
         } catch (_) {}
         const rec = {
           ok: true,
@@ -629,9 +643,45 @@ function createBrowserTools(options = {}) {
         bs.pushDownloadRecord(rec);
         bs.logAction('browser.download', rec);
       } catch (err) {
+        // saveAs 失败时：若临时文件在，尽量拷到下载目录
+        let recovered = '';
+        try {
+          if (artifactPath && fsSync.existsSync(artifactPath)) {
+            ensureDir(dlRoot);
+            const safe =
+              pickDownloadFilename({ suggested: suggestedRaw, url }) ||
+              `download-${Date.now()}`;
+            recovered = uniquePath(dlRoot, safe);
+            fsSync.copyFileSync(artifactPath, recovered);
+            try {
+              fsSync.unlinkSync(artifactPath);
+            } catch (_) {}
+          }
+        } catch (_) {
+          recovered = '';
+        }
+        if (recovered) {
+          let size = 0;
+          try {
+            size = fsSync.statSync(recovered).size;
+          } catch (_) {}
+          const rec = {
+            ok: true,
+            path: recovered,
+            filename: path.basename(recovered),
+            url,
+            suggestedRaw,
+            size,
+            recoveredFrom: artifactPath || '',
+            at: new Date().toISOString()
+          };
+          bs.pushDownloadRecord(rec);
+          bs.logAction('browser.download', rec);
+          return;
+        }
         const rec = {
           ok: false,
-          path: '',
+          path: artifactPath || '',
           filename: suggestedRaw || '',
           url,
           suggestedRaw,
@@ -659,17 +709,20 @@ function createBrowserTools(options = {}) {
     try {
       ensureDir(dlRoot);
       const client = await context.newCDPSession(page);
-      // Chromium/Edge：允许下载并指定路径（Playwright 仍会再 saveAs）
-      await client.send('Browser.setDownloadBehavior', {
-        behavior: 'allowAndName',
-        downloadPath: dlRoot,
-        eventsEnabled: true
-      }).catch(async () => {
-        await client.send('Page.setDownloadBehavior', {
+      // allow：落到 downloadPath；不要用 allowAndName（会变成 UUID 文件名，像 playwright-artifacts）
+      const tryCdp = async (method, params) => client.send(method, params);
+      try {
+        await tryCdp('Browser.setDownloadBehavior', {
+          behavior: 'allow',
+          downloadPath: dlRoot,
+          eventsEnabled: true
+        });
+      } catch (_) {
+        await tryCdp('Page.setDownloadBehavior', {
           behavior: 'allow',
           downloadPath: dlRoot
         });
-      });
+      }
     } catch (err) {
       bs.logAction('browser.cdp_download_warn', {
         error: (err && err.message) || String(err),

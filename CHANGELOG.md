@@ -6,6 +6,13 @@
 
 ---
 
+## [1.5.4] — 2026-09-22
+
+### 去掉 Playwright 临时下载路径
+- `E:\Temp\playwright-artifacts-*\uuid` 仅为中间文件；`saveAs` 后删除该临时文件
+- CDP 改用 `behavior: allow`（不用 `allowAndName`，避免 UUID 文件名）
+- saveAs 失败时从 artifact 拷贝到配置下载目录兜底
+
 ## [1.5.3] — 2026-09-22
 
 ### 浏览器下载捕获加固
