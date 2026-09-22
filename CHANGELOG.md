@@ -6,11 +6,19 @@
 
 ---
 
+## [1.6.0] — 2026-09-22
+
+### 页面下载新链路（推荐）
+- `browser_resolve_download_url`：从 DOM href/data-url 或点击拦网络，只解析真实 http(s) URL
+- `browser_download`：解析 URL → 带浏览器 Cookie 用 HTTP 保存到配置下载目录（真实文件名，不进 E:\\Temp UUID）
+- 仅 blob/无 URL 时回退 Playwright download
+- 护栏：页面下载优先 `browser_download`，已知 URL 用 `download_file`
+
 ## [1.5.8] — 2026-09-22
 
 ### 去掉 reg.exe 污染日志
-- 删除 `reg query` 查 Chrome/Edge（键不存在时中文 stderr「系统找不到指定的注册表项」被误读成「锟斤拷」）
-- 仍用固定路径 + `CHROME_PATH` / `EDGE_PATH` / 设置里 executablePath
+- 删除 `reg query` 查 Chrome/Edge（避免 stderr「锟斤拷」）
+- 仍用固定路径 + `CHROME_PATH` / `EDGE_PATH` / executablePath
 
 ## [1.5.7] — 2026-09-22
 

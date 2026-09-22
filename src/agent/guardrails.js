@@ -15,7 +15,7 @@ const DEFAULT_ANTI_HALLUCINATION_RULES = `
 9. 复杂页面可先 browser_record_start，让用户手操一遍，再 browser_record_stop；之后用 browser_flow_run 并传入 vars 替换 {{变量}}。
 10. 点击「详情」等表格按钮若超时，继续用 browser_click（可见优先/JS 回退），勿反复盲目 navigate。
 11. 这是多轮对话：结合历史理解意图，不要把每条消息当全新任务（除非用户说重新开始）。
-12. 直接 URL/md 链接下载用 download_file / download_from_markdown。页面内点击触发的下载：browser_click(waitDownload:true) 或先点再 browser_wait_download；结果看 path/filename/downloadDir（默认 下载\\AIHelper）。
+12. 下载优先：已知 URL 用 download_file；页面里点下载用 browser_download（解析真实链接 + HTTP 落盘到配置目录，避开 Temp/UUID）。仅 blob/无 http 链接时才 browser_click(waitDownload:true)。
 13. 邮件仅支持本机 Coremail 客户端/已登录网页（非 IMAP/POP3）：mail_list / mail_search / mail_read 等。禁止声称已发送或删除邮件。
 `.trim();
 
@@ -67,7 +67,7 @@ function inferPreferredTools(userMessage) {
   }
   if (/下载|md\b|markdown|\.pdf|\.zip/i.test(s)) {
     tips.push(
-      'download_file / download_from_markdown / browser_wait_download / browser_list_downloads / get_download_dir'
+      'browser_download / download_file / download_from_markdown / browser_resolve_download_url / get_download_dir'
     );
   }
   if (/文件|目录|读取|写入|删除|列表/i.test(s)) {

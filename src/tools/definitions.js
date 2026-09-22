@@ -312,6 +312,47 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'browser_resolve_download_url',
+      description:
+        '从当前页解析真实下载 URL：读 a[href]/data-url，或点击后拦截网络。只返回 url，不落盘。拿到 url 后用 download_file 或 browser_download。',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string' },
+          text: { type: 'string' },
+          url: { type: 'string', description: '若已知直接传入' },
+          click: { type: 'boolean', description: '默认 true：找不到 href 时点击并拦网络' },
+          timeoutMs: { type: 'number' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_download',
+      description:
+        '【推荐】页面下载：解析真实 http(s) URL（DOM/点击拦截）→ 带浏览器 Cookie 用 HTTP 保存到配置下载目录。避开 Playwright Temp/UUID。参数：selector/text 或 url；返回 path/filename。',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: '已知文件 URL 时直接下' },
+          selector: { type: 'string', description: '下载按钮/链接 CSS' },
+          text: { type: 'string', description: '下载按钮可见文本' },
+          filename: { type: 'string', description: '可选保存名' },
+          click: { type: 'boolean', description: '无 href 时是否点击解析，默认 true' },
+          timeoutMs: { type: 'number' },
+          fallbackPlaywright: {
+            type: 'boolean',
+            description: 'HTTP 解析失败时是否回退 Playwright download，默认 true'
+          }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'browser_record_start',
       description:
         '开始录制用户在浏览器中的点击/输入。请先打开目标页，再调用本工具，然后人工操作；结束后 browser_record_stop。',

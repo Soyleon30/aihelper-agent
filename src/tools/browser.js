@@ -1,5 +1,8 @@
 const path = require('path');
+const fs = require('fs');
 const fsp = require('fs').promises;
+const crypto = require('crypto');
+const fetch = require('node-fetch');
 const bs = require('./browser-session');
 const {
   resolveDownloadRoot,
@@ -907,6 +910,495 @@ function createBrowserTools(options = {}) {
     throw lastErr || new Error('click failed');
   }
 
+  function looksLikeFileUrl(u) {
+    const s = String(u || '');
+    if (!/^https?:\/\//i.test(s)) return false;
+    if (/\/th\/id\/|\/download\/|\/file\/|attachment|export|getfile/i.test(s)) return true;
+    try {
+      const p = new URL(s).pathname.toLowerCase();
+      return /\.(pdf|zip|rar|7z|gz|tgz|doc|docx|xls|xlsx|ppt|pptx|csv|txt|json|xml|jpe?g|jfif|png|gif|webp|bmp|svg|mp[34]|wav|avi|mkv|exe|msi|dmg|iso|apk)(\?|$)/i.test(
+        p
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function isDownloadResponse(res) {
+    try {
+      const headers = res.headers();
+      const cd = String(headers['content-disposition'] || headers['Content-Disposition'] || '');
+      if (/attachment|filename/i.test(cd)) return true;
+      const ct = String(headers['content-type'] || headers['Content-Type'] || '').toLowerCase();
+      if (!ct) return false;
+      if (ct.includes('text/html') || ct.includes('text/css') || ct.includes('javascript')) {
+        return false;
+      }
+      if (
+        ct.startsWith('image/') ||
+        ct.startsWith('audio/') ||
+        ct.startsWith('video/') ||
+        ct.includes('application/pdf') ||
+        ct.includes('application/zip') ||
+        ct.includes('application/octet-stream') ||
+        ct.includes('application/msword') ||
+        ct.includes('spreadsheet') ||
+        ct.includes('officedocument')
+      ) {
+        return true;
+      }
+      return looksLikeFileUrl(res.url());
+    } catch {
+      return false;
+    }
+  }
+
+  async function extractHrefFromTarget(p, args) {
+    return p.evaluate(
+      ({ selector: sel, text: txt }) => {
+        function abs(u) {
+          try {
+            return new URL(u, location.href).href;
+          } catch {
+            return '';
+          }
+        }
+        function pickFrom(el) {
+          if (!el) return null;
+          const a =
+            el.closest &&
+            (el.closest('a[href]') ||
+              el.closest('[data-url]') ||
+              el.closest('[data-href]') ||
+              el.closest('[data-src]') ||
+              el.closest('[download]'));
+          const node = a || el;
+          const attrs = [
+            'href',
+            'data-url',
+            'data-href',
+            'data-src',
+            'data-downloadurl',
+            'data-file',
+            'download'
+          ];
+          for (const k of attrs) {
+            const v = node.getAttribute && node.getAttribute(k);
+            if (v && /^(https?:|\/)/i.test(v)) return { url: abs(v), via: 'attr:' + k };
+          }
+          if (node.src && /^(https?:|\/)/i.test(node.src)) {
+            return { url: abs(node.src), via: 'src' };
+          }
+          if (node.currentSrc) return { url: abs(node.currentSrc), via: 'currentSrc' };
+          return null;
+        }
+        if (sel) {
+          const el = document.querySelector(sel);
+          const hit = pickFrom(el);
+          if (hit) return hit;
+        }
+        if (txt) {
+          const nodes = Array.from(
+            document.querySelectorAll('a, button, img, [role="button"], [data-url], [href]')
+          );
+          const exact = nodes.filter((el) => (el.textContent || '').trim() === txt);
+          const loose = nodes.filter((el) => (el.textContent || '').trim().includes(txt));
+          for (const pool of [exact, loose]) {
+            for (const el of pool) {
+              const hit = pickFrom(el);
+              if (hit) return hit;
+            }
+          }
+        }
+        return null;
+      },
+      { selector: args.selector || '', text: args.text || '' }
+    );
+  }
+
+  async function resolveDownloadUrl(p, args = {}) {
+    const timeoutMs = Math.max(3000, Number(args.timeoutMs) || 20000);
+    if (args.url && /^https?:\/\//i.test(String(args.url))) {
+      return { url: String(args.url).trim(), method: 'given-url' };
+    }
+
+    if (args.selector || args.text) {
+      const hrefHit = await extractHrefFromTarget(p, args).catch(() => null);
+      if (hrefHit && hrefHit.url && /^https?:\/\//i.test(hrefHit.url)) {
+        return { url: hrefHit.url, method: 'dom-' + (hrefHit.via || 'href') };
+      }
+    }
+
+    if (args.click === false) {
+      return { url: '', method: 'none', error: '未找到可下载链接（click=false）' };
+    }
+
+    const shared = bs.getShared();
+    const context = shared.context;
+    if (!context) return { url: '', method: 'none', error: '浏览器未就绪' };
+
+    let resolved = '';
+    let method = 'network';
+    const onRequest = (req) => {
+      try {
+        const u = req.url();
+        if (looksLikeFileUrl(u) && !resolved) {
+          resolved = u;
+          method = 'request';
+        }
+      } catch (_) {}
+    };
+    const onResponse = (res) => {
+      try {
+        if (isDownloadResponse(res) && !resolved) {
+          resolved = res.url();
+          method = 'response';
+        }
+      } catch (_) {}
+    };
+    context.on('request', onRequest);
+    context.on('response', onResponse);
+
+    const dlWait = p
+      .waitForEvent('download', { timeout: timeoutMs })
+      .then((d) => {
+        try {
+          const u = d.url();
+          if (u && /^https?:\/\//i.test(u)) {
+            resolved = u;
+            method = 'playwright-download-url';
+          }
+        } catch (_) {}
+        // 取消 Playwright 落盘，我们改走 HTTP
+        try {
+          d.cancel();
+        } catch (_) {}
+        return d;
+      })
+      .catch(() => null);
+
+    try {
+      if (args.selector || args.text) {
+        await robustClick(p, args);
+      } else if (args.url) {
+        await p.goto(args.url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      } else {
+        return { url: '', method: 'none', error: '需要 selector/text/url 之一' };
+      }
+      await Promise.race([
+        dlWait,
+        new Promise((r) => setTimeout(r, timeoutMs)),
+        p.waitForTimeout(Math.min(1500, timeoutMs)).then(async () => {
+          // 短等后若已有网络结果可提前结束
+          for (let i = 0; i < 10 && !resolved; i++) {
+            await new Promise((x) => setTimeout(x, 200));
+          }
+        })
+      ]);
+    } finally {
+      try {
+        context.off('request', onRequest);
+        context.off('response', onResponse);
+      } catch (_) {}
+    }
+
+    if (resolved && /^https?:\/\//i.test(resolved)) {
+      return { url: resolved, method };
+    }
+    return {
+      url: '',
+      method: 'none',
+      error: '未能解析到 http(s) 下载地址（可能是 blob/仅本地点击下载）'
+    };
+  }
+
+  async function cookieHeaderForUrl(targetUrl) {
+    const shared = bs.getShared();
+    if (!shared.context) return '';
+    try {
+      const all = await shared.context.cookies(targetUrl);
+      if (!all || !all.length) {
+        const any = await shared.context.cookies();
+        return (any || []).map((c) => `${c.name}=${c.value}`).join('; ');
+      }
+      return all.map((c) => `${c.name}=${c.value}`).join('; ');
+    } catch {
+      return '';
+    }
+  }
+
+  function sniffBinaryKind(buf) {
+    if (!buf || buf.length < 4) return '';
+    if (buf[0] === 0xff && buf[1] === 0xd8) return 'jpg';
+    if (buf[0] === 0x89 && buf[1] === 0x50) return 'png';
+    if (buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP') {
+      return 'webp';
+    }
+    if (buf.slice(0, 4).toString() === '%PDF') return 'pdf';
+    if (buf[0] === 0x50 && buf[1] === 0x4b) return 'zip';
+    if (buf.slice(0, 5).toString() === 'GIF89' || buf.slice(0, 5).toString() === 'GIF87') {
+      return 'gif';
+    }
+    // HTML 误下
+    const head = buf.slice(0, 64).toString('utf8').toLowerCase();
+    if (head.includes('<!doctype') || head.includes('<html')) return 'html';
+    return '';
+  }
+
+  async function fetchBytesViaContext(fileUrl, opts = {}) {
+    const shared = bs.getShared();
+    const context = shared.context;
+    if (!context || !context.request) throw new Error('无 browser context.request');
+    let pageUrl = '';
+    try {
+      pageUrl = (shared.page && shared.page.url()) || '';
+    } catch (_) {}
+    const headers = {
+      Accept: 'image/avif,image/webp,image/apng,image/*,application/octet-stream,*/*;q=0.8',
+      ...(opts.headers || {})
+    };
+    if (pageUrl && /^https?:/i.test(pageUrl) && pageUrl !== 'about:blank') {
+      headers.Referer = pageUrl;
+    } else if (/bing\.com|msn\.com/i.test(fileUrl)) {
+      headers.Referer = 'https://www.bing.com/images/';
+    }
+    const res = await context.request.get(fileUrl, {
+      headers,
+      timeout: opts.timeoutMs || cfg.timeoutMs || 120000,
+      maxRedirects: 10,
+      failOnStatusCode: false
+    });
+    const status = res.status();
+    if (status < 200 || status >= 300) {
+      throw new Error(`context.request HTTP ${status}`);
+    }
+    const buf = Buffer.from(await res.body());
+    const headersObj = res.headers();
+    return {
+      buf,
+      ct: headersObj['content-type'] || headersObj['Content-Type'] || '',
+      cd: headersObj['content-disposition'] || headersObj['Content-Disposition'] || '',
+      finalUrl: res.url() || fileUrl
+    };
+  }
+
+  async function fetchBytesInPage(p, fileUrl) {
+    const data = await p.evaluate(async (u) => {
+      const r = await fetch(u, {
+        credentials: 'include',
+        redirect: 'follow',
+        headers: { Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' }
+      });
+      if (!r.ok) return { ok: false, status: r.status, statusText: r.statusText };
+      const ct = r.headers.get('content-type') || '';
+      const cd = r.headers.get('content-disposition') || '';
+      const ab = await r.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(ab));
+      return { ok: true, status: r.status, url: r.url, ct, cd, bytes };
+    }, fileUrl);
+    if (!data || !data.ok) {
+      throw new Error(
+        `页面内 fetch 失败 HTTP ${data && data.status} ${data && data.statusText}`
+      );
+    }
+    return {
+      buf: Buffer.from(data.bytes),
+      ct: data.ct || '',
+      cd: data.cd || '',
+      finalUrl: data.url || fileUrl
+    };
+  }
+
+  async function fetchBytesNode(fileUrl, opts = {}) {
+    const timeoutMs = opts.timeoutMs || cfg.timeoutMs || 120000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let pageUrl = '';
+      try {
+        pageUrl = (bs.getShared().page && bs.getShared().page.url()) || '';
+      } catch (_) {}
+      const headers = {
+        'User-Agent':
+          cfg.userAgent ||
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'Accept-Language': cfg.acceptLanguage || 'zh-CN,zh;q=0.9,en;q=0.8',
+        ...(opts.headers || {})
+      };
+      const cookie = await cookieHeaderForUrl(fileUrl);
+      if (cookie) headers.Cookie = cookie;
+      if (pageUrl && /^https?:/i.test(pageUrl)) headers.Referer = pageUrl;
+      else if (/bing\.com|msn\.com/i.test(fileUrl)) headers.Referer = 'https://www.bing.com/images/';
+
+      const res = await fetch(fileUrl, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+        redirect: 'follow'
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      const buf = await res.buffer();
+      return {
+        buf,
+        ct: res.headers.get('content-type') || '',
+        cd: res.headers.get('content-disposition') || '',
+        finalUrl: res.url || fileUrl
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function fetchBytesViaNavigation(fileUrl, opts = {}) {
+    // 浏览器直接打开资源 URL（图片/pdf 等），取导航响应体——最接近「地址栏打开再保存」
+    const page = bs.getShared().page;
+    if (!page || page.isClosed()) throw new Error('无 page');
+    const timeout = opts.timeoutMs || cfg.timeoutMs || 60000;
+    const res = await page.goto(fileUrl, {
+      waitUntil: 'commit',
+      timeout
+    });
+    if (!res) throw new Error('navigation 无 response');
+    const status = res.status();
+    if (status < 200 || status >= 400) throw new Error(`navigation HTTP ${status}`);
+    const buf = Buffer.from(await res.body());
+    const headers = res.headers();
+    return {
+      buf,
+      ct: headers['content-type'] || '',
+      cd: headers['content-disposition'] || '',
+      finalUrl: res.url() || fileUrl
+    };
+  }
+
+  async function httpDownloadToDir(fileUrl, opts = {}) {
+    const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
+    ensureDir(dlRoot);
+    const errors = [];
+    let got = null;
+    let via = '';
+
+    // 1) 浏览器导航到资源 URL 取 body（对 Bing 缩略图等直链最稳）
+    try {
+      got = await fetchBytesViaNavigation(fileUrl, opts);
+      via = 'page.goto-body';
+      if (sniffBinaryKind(got.buf) === 'html') {
+        errors.push('page.goto→html');
+        got = null;
+      }
+    } catch (err) {
+      errors.push('page.goto:' + (err.message || err));
+    }
+
+    // 2) Playwright context.request
+    if (!got) {
+      try {
+        got = await fetchBytesViaContext(fileUrl, opts);
+        via = 'context.request';
+        if (sniffBinaryKind(got.buf) === 'html') {
+          errors.push('context.request→html');
+          got = null;
+        }
+      } catch (err) {
+        errors.push('context.request:' + (err.message || err));
+      }
+    }
+
+    // 3) 页面内 fetch
+    if (!got) {
+      const page = bs.getShared().page;
+      if (page && !page.isClosed()) {
+        try {
+          got = await fetchBytesInPage(page, fileUrl);
+          via = 'page-fetch';
+          if (sniffBinaryKind(got.buf) === 'html') {
+            errors.push('page-fetch→html');
+            got = null;
+          }
+        } catch (err) {
+          errors.push('page-fetch:' + (err.message || err));
+        }
+      }
+    }
+
+    // 4) Node fetch + Cookie
+    if (!got) {
+      try {
+        got = await fetchBytesNode(fileUrl, opts);
+        via = 'http+cookies';
+        if (sniffBinaryKind(got.buf) === 'html') {
+          errors.push('node-fetch→html');
+          got = null;
+        }
+      } catch (err) {
+        errors.push('node-fetch:' + (err.message || err));
+      }
+    }
+
+    if (!got) {
+      throw new Error(
+        `无法下载有效文件（均得到 HTML 或失败）: ${(errors || []).join(' | ')} url=${fileUrl}`
+      );
+    }
+
+    const buf = got.buf;
+    const ct = got.ct || '';
+    const cd = got.cd || '';
+    const kind = sniffBinaryKind(buf);
+    if (kind === 'html' || (/text\/html/i.test(ct) && !kind)) {
+      throw new Error(
+        `下载到的是 HTML 而非文件（防盗链/跳转）。finalUrl=${got.finalUrl || fileUrl}`
+      );
+    }
+    let name =
+      opts.filename ||
+      pickDownloadFilename({
+        url: got.finalUrl || fileUrl,
+        contentDisposition: cd
+      }) ||
+      `download-${Date.now()}`;
+    const ext = path.extname(name);
+    if (!ext && kind) name += `.${kind === 'jpg' ? 'jpg' : kind}`;
+    else if (!ext) {
+      if (/jpeg|jpg/i.test(ct)) name += '.jpg';
+      else if (/png/i.test(ct)) name += '.png';
+      else if (/webp/i.test(ct)) name += '.webp';
+      else if (/gif/i.test(ct)) name += '.gif';
+      else if (/pdf/i.test(ct)) name += '.pdf';
+      else if (/zip/i.test(ct)) name += '.zip';
+    }
+    // 按实际内容纠正扩展名（如 Bing 常返回 webp 却起名 .jpg）
+    if (kind && kind !== 'html') {
+      const want =
+        kind === 'jpg' ? ['.jpg', '.jpeg', '.jfif'] : ['.' + kind];
+      const cur = path.extname(name).toLowerCase();
+      if (!want.includes(cur)) {
+        const stem = cur ? name.slice(0, -cur.length) : name;
+        name = stem + (kind === 'jpg' ? '.jpg' : '.' + kind);
+      }
+    }
+    const dest = uniquePath(dlRoot, name);
+    await fsp.writeFile(dest, buf);
+    const hash = crypto.createHash('sha256').update(buf).digest('hex');
+    const rec = {
+      ok: true,
+      path: dest,
+      filename: path.basename(dest),
+      url: got.finalUrl || fileUrl,
+      size: buf.length,
+      sha256: hash,
+      contentType: ct || undefined,
+      kind: kind || undefined,
+      downloadDir: dlRoot,
+      via,
+      at: new Date().toISOString()
+    };
+    bs.pushDownloadRecord(rec);
+    bs.logAction('browser.download_http', rec);
+    return rec;
+  }
+
   async function withStep(name, args, fn) {
     const t0 = Date.now();
     bs.logAction('tool.start', { name, args: sanitizeArgs(name, args) });
@@ -1044,6 +1536,94 @@ function createBrowserTools(options = {}) {
           downloadDir: shared.downloadDir || resolveBrowserDownloadDir(cfg, userDataPath),
           count: list.length,
           downloads: list
+        };
+      });
+    },
+
+    /**
+     * 从当前页解析真实下载 URL（读 href / 点击拦网络），不落盘。
+     */
+    async browser_resolve_download_url(args) {
+      return withStep('browser_resolve_download_url', args, async () => {
+        const p = await ensurePage();
+        const hit = await resolveDownloadUrl(p, args || {});
+        return {
+          ok: !!hit.url,
+          url: hit.url || '',
+          method: hit.method,
+          error: hit.error,
+          pageUrl: p.url(),
+          downloadDir: resolveBrowserDownloadDir(cfg, userDataPath),
+          hint: hit.url
+            ? '可用 download_file 或 browser_download 保存到配置下载目录'
+            : '可改 selector/text，或对 blob 下载改用 browser_click(waitDownload:true)'
+        };
+      });
+    },
+
+    /**
+     * 推荐：解析 URL（DOM/点击拦截）→ 带浏览器 Cookie 用 HTTP 下载到配置目录。
+     * 避开 Playwright Temp/UUID；最终 path 为真实文件名。
+     */
+    async browser_download(args) {
+      return withStep('browser_download', args, async () => {
+        const p = await ensurePage();
+        const a = args || {};
+        let fileUrl = a.url && /^https?:\/\//i.test(String(a.url)) ? String(a.url).trim() : '';
+        let resolveMethod = fileUrl ? 'given-url' : '';
+
+        if (!fileUrl) {
+          const hit = await resolveDownloadUrl(p, {
+            selector: a.selector,
+            text: a.text,
+            url: a.navigateUrl,
+            click: a.click !== false,
+            timeoutMs: a.timeoutMs || 20000
+          });
+          fileUrl = hit.url || '';
+          resolveMethod = hit.method;
+          if (!fileUrl) {
+            // 回退：Playwright download 管道
+            if (a.fallbackPlaywright !== false && (a.selector || a.text)) {
+              const dlPromise = bs.waitNextDownload(a.timeoutMs || 60000);
+              await robustClick(p, a);
+              try {
+                const rec = await dlPromise;
+                return {
+                  ok: !!rec.ok,
+                  ...rec,
+                  resolveMethod: 'playwright-download-fallback',
+                  message: rec.ok
+                    ? `已保存（Playwright 回退）: ${rec.path}`
+                    : rec.error || '下载失败'
+                };
+              } catch (err) {
+                return {
+                  ok: false,
+                  error: hit.error || err.message || String(err),
+                  resolveMethod,
+                  downloadDir: resolveBrowserDownloadDir(cfg, userDataPath)
+                };
+              }
+            }
+            return {
+              ok: false,
+              error: hit.error || '未能解析下载 URL',
+              resolveMethod,
+              downloadDir: resolveBrowserDownloadDir(cfg, userDataPath)
+            };
+          }
+        }
+
+        const saved = await httpDownloadToDir(fileUrl, {
+          filename: a.filename,
+          timeoutMs: a.timeoutMs,
+          headers: a.headers
+        });
+        return {
+          ...saved,
+          resolveMethod,
+          message: `已保存到 ${saved.path}（HTTP+浏览器Cookie，非 Temp）`
         };
       });
     },

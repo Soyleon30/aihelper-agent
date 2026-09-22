@@ -115,7 +115,18 @@ function main() {
   const ver = pkg.version || '0.0.0';
   const zipName = `AIHelper-Agent-${ver}-win-x64-green.zip`;
   const zipPath = path.join(outDir, zipName);
-  console.log('压缩绿色版 ZIP …', zipName);
+  try {
+    for (const n of fs.readdirSync(outDir)) {
+      if (
+        /^AIHelper-Agent-.*-win-x64-green\.zip$/i.test(n) &&
+        n !== zipName
+      ) {
+        console.log('删除旧离线包', n);
+        fs.unlinkSync(path.join(outDir, n));
+      }
+    }
+  } catch (_) {}
+  console.log('压缩绿色版 ZIP …', zipName, '(version from package.json =', ver + ')');
   try {
     zipDir(path.join(outDir, 'win-unpacked'), zipPath);
   } catch (e) {
