@@ -6,14 +6,17 @@
 
 ---
 
+## [1.5.7] — 2026-09-22
+
+### 真正让 downloadsPath 生效
+- Playwright 普通模式会**丢弃** `launch.downloadsPath`，强制 `%TEMP%/playwright-artifacts` + UUID
+- 启动时设置 `PWTEST_UNDER_TEST=1`（main + require playwright 前），使 downloadsPath 指向配置下载目录
+- saveAs 后清理目录内残留 UUID 文件名
+
 ## [1.5.6] — 2026-09-22
 
-### 根治下载落到 E:\\Temp\\playwright-artifacts
-- **Bug**：`downloadsPath` 误写在 `newContext`，Playwright 只认 **`chromium.launch({ downloadsPath })`**，故一直进 `%TEMP%`
-- 已改到 `launch` / `launchPersistentContext`；浏览器可见路径与 `saveAs` 均在配置的下载目录
-
-### 本机 Chrome
-- 设置 →「浏览器可执行文件」填 `chrome.exe` 完整路径即可（也可环境变量 `CHROME_PATH`）
+### downloadsPath 放到 launch
+- 从 newContext 改到 launch（仍不够，见 1.5.7 Playwright 丢弃逻辑）
 
 ## [1.5.5] — 2026-09-22
 

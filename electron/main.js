@@ -1,3 +1,8 @@
+// 须在任何 require('playwright') 之前：否则 downloadsPath 被丢弃，下载进 %TEMP%/playwright-artifacts
+if (process.env.PWTEST_UNDER_TEST == null || process.env.PWTEST_UNDER_TEST === '') {
+  process.env.PWTEST_UNDER_TEST = '1';
+}
+
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');

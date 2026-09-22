@@ -106,6 +106,11 @@ function createBrowserTools(options = {}) {
     const shared = bs.getShared();
     if (shared.playwright) return shared.playwright;
     try {
+      // Playwright 普通模式会丢弃 launch.downloadsPath，强制 %TEMP%/playwright-artifacts + UUID。
+      // 必须在 require 之前打开 PWTEST_UNDER_TEST，downloadsPath 才会生效。
+      if (process.env.PWTEST_UNDER_TEST == null || process.env.PWTEST_UNDER_TEST === '') {
+        process.env.PWTEST_UNDER_TEST = '1';
+      }
       bs.ensurePlaywrightBrowsersEnv();
       shared.playwright = require('playwright');
       return shared.playwright;
@@ -634,16 +639,25 @@ function createBrowserTools(options = {}) {
           `download-${Date.now()}`;
         const dest = uniquePath(dlRoot, safe);
         await download.saveAs(dest);
-        // 若 launch.downloadsPath 已把 UUID 落到 dlRoot，删掉残留 UUID（最终只用 dest 文件名）
-        if (
-          artifactPath &&
-          path.resolve(path.dirname(artifactPath)) === path.resolve(dlRoot) &&
-          path.resolve(artifactPath) !== path.resolve(dest)
-        ) {
+        // 中间可能是 UUID 文件名：删掉与 dest 不同的 artifact，只保留真实文件名
+        if (artifactPath && path.resolve(artifactPath) !== path.resolve(dest)) {
           try {
             if (fsSync.existsSync(artifactPath)) fsSync.unlinkSync(artifactPath);
           } catch (_) {}
         }
+        // 清掉下载目录里残留的纯 UUID 文件（无扩展名）
+        try {
+          for (const name of fsSync.readdirSync(dlRoot)) {
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)) {
+              const p = path.join(dlRoot, name);
+              if (path.resolve(p) !== path.resolve(dest)) {
+                try {
+                  fsSync.unlinkSync(p);
+                } catch (_) {}
+              }
+            }
+          }
+        } catch (_) {}
         let size = 0;
         try {
           size = fsSync.statSync(dest).size;
