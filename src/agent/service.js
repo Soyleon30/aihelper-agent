@@ -365,9 +365,13 @@ function createAgentService(options = {}) {
         llmRounds += 1;
         const tLlm = Date.now();
 
-        // 首轮且任务像要动真环境：tool_choice=required，逼模型必须调工具
-        // 部分 thinking 模型（如 deepseek-flash）不支持 required，400 后自动降为 auto
+        // 首轮 tool_choice=required 逼调工具；thinking 模型由 provider 自动去掉该字段重试
         let toolChoice;
+        const activeModel = String(
+          (provider.getActive && provider.getActive().model) || ''
+        ).toLowerCase();
+        const thinkingModel =
+          /flash|reasoner|thinking|r1|o1|o3|o4-mini/i.test(activeModel);
         if (
           !lastRound &&
           !forcedFinal &&
@@ -376,12 +380,13 @@ function createAgentService(options = {}) {
           needsTools &&
           toolCount === 0 &&
           nudgeCount === 0 &&
-          round === 0
+          round === 0 &&
+          !thinkingModel
         ) {
           toolChoice = 'required';
         }
 
-        const llmOpts = {
+        const data = await provider.chatCompletions(messages, {
           tools:
             lastRound || forcedFinal
               ? undefined
@@ -390,34 +395,7 @@ function createAgentService(options = {}) {
                 : undefined,
           tool_choice: toolChoice,
           signal
-        };
-
-        let data;
-        try {
-          data = await provider.chatCompletions(messages, llmOpts);
-        } catch (err) {
-          const em = String(err && err.message ? err.message : err);
-          const isToolChoiceReject =
-            /tool_choice/i.test(em) &&
-            (/thinking\s*mode/i.test(em) ||
-              /does not support/i.test(em) ||
-              /\b400\b/.test(em));
-          if (isToolChoiceReject && toolChoice && toolChoice !== 'auto') {
-            log('warn', 'llm.tool_choice_fallback', {
-              sessionId,
-              from: toolChoice,
-              to: 'auto',
-              error: em.slice(0, 200)
-            });
-            toolChoice = 'auto';
-            data = await provider.chatCompletions(messages, {
-              ...llmOpts,
-              tool_choice: 'auto'
-            });
-          } else {
-            throw err;
-          }
-        }
+        });
 
         if (budgetHint && !lastRound) {
           const last = messages[messages.length - 1];

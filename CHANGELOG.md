@@ -6,10 +6,24 @@
 
 ---
 
+## [1.5.3] — 2026-09-22
+
+### 浏览器下载捕获加固
+- 下载监听改为 **context 级**（所有标签页），不再只绑首页
+- CDP `setDownloadBehavior` 强制下载目录
+- 新开 page 同步绑监听 + CDP
+
+## [1.5.2] — 2026-09-22
+
+### 修复 thinking 模型 tool_choice（彻底）
+- 默认**不再**无故附带 `tool_choice: auto`（仅显式 required 时才带）
+- 若 API 仍因 tool_choice 400，自动**去掉该字段**重试
+- `deepseek-flash` 等 thinking 模型名首轮跳过 `required`
+
 ## [1.5.1] — 2026-09-22
 
 ### 修复 thinking 模型 + tool_choice
-- DeepSeek 等 thinking 模型返回 `400: Thinking mode does not support this tool_choice` 时，自动把 `required` 降为 `auto` 并重试，不再整轮失败
+- 初版：required 失败时降为 auto（仍可能被 thinking 拒绝，见 1.5.2）
 
 ---
 

@@ -545,52 +545,8 @@ function createBrowserTools(options = {}) {
 
     shared.page.setDefaultTimeout(cfg.timeoutMs || 30000);
 
-    // 页面触发的浏览器下载 → 统一进下载目录，并解码中文文件名
-    shared.page.on('download', async (download) => {
-      const url = (() => {
-        try {
-          return download.url();
-        } catch {
-          return '';
-        }
-      })();
-      const suggestedRaw = (() => {
-        try {
-          return download.suggestedFilename() || '';
-        } catch {
-          return '';
-        }
-      })();
-      try {
-        const safe =
-          pickDownloadFilename({ suggested: suggestedRaw, url }) ||
-          `download-${Date.now()}`;
-        const dest = uniquePath(dlRoot, safe);
-        await download.saveAs(dest);
-        const rec = {
-          ok: true,
-          path: dest,
-          filename: path.basename(dest),
-          url,
-          suggestedRaw,
-          at: new Date().toISOString()
-        };
-        bs.pushDownloadRecord(rec);
-        bs.logAction('browser.download', rec);
-      } catch (err) {
-        const rec = {
-          ok: false,
-          path: '',
-          filename: suggestedRaw || '',
-          url,
-          suggestedRaw,
-          error: err.message || String(err),
-          at: new Date().toISOString()
-        };
-        bs.pushDownloadRecord(rec);
-        bs.logAction('browser.download_error', rec);
-      }
-    });
+    // 所有标签页的下载：context 级挂接（新开页也能捕获）
+    bindContextDownloads(shared.context, dlRoot);
 
     if (stealthEnabled()) {
       try {
@@ -608,7 +564,19 @@ function createBrowserTools(options = {}) {
       } catch (_) {}
     }
 
+    // CDP：强制浏览器下载行为落到我们的目录（比仅 page.on 更稳）
+    await applyCdpDownloadBehavior(shared.context, shared.page, dlRoot);
+
     await bindPageListeners(shared.page);
+    // 已有/后续 page 也绑操作监听
+    try {
+      shared.context.on('page', (pg) => {
+        bindPageListeners(pg).catch(() => {});
+        pg.setDefaultTimeout(cfg.timeoutMs || 30000);
+        applyCdpDownloadBehavior(shared.context, pg, dlRoot).catch(() => {});
+      });
+    } catch (_) {}
+
     bs.logAction('browser.launch', {
       headless,
       stealth: stealthEnabled(),
@@ -617,6 +585,97 @@ function createBrowserTools(options = {}) {
       executablePath: launchOpts.executablePath || launchOpts.channel || 'bundled'
     });
     return shared.page;
+  }
+
+  function bindContextDownloads(context, dlRoot) {
+    if (!context || context.__aihelperDlBound) return;
+    context.__aihelperDlBound = true;
+
+    const onDownload = async (download) => {
+      const url = (() => {
+        try {
+          return download.url();
+        } catch {
+          return '';
+        }
+      })();
+      const suggestedRaw = (() => {
+        try {
+          return download.suggestedFilename() || '';
+        } catch {
+          return '';
+        }
+      })();
+      try {
+        ensureDir(dlRoot);
+        const safe =
+          pickDownloadFilename({ suggested: suggestedRaw, url }) ||
+          `download-${Date.now()}`;
+        const dest = uniquePath(dlRoot, safe);
+        await download.saveAs(dest);
+        let size = 0;
+        try {
+          size = require('fs').statSync(dest).size;
+        } catch (_) {}
+        const rec = {
+          ok: true,
+          path: dest,
+          filename: path.basename(dest),
+          url,
+          suggestedRaw,
+          size,
+          at: new Date().toISOString()
+        };
+        bs.pushDownloadRecord(rec);
+        bs.logAction('browser.download', rec);
+      } catch (err) {
+        const rec = {
+          ok: false,
+          path: '',
+          filename: suggestedRaw || '',
+          url,
+          suggestedRaw,
+          error: err.message || String(err),
+          at: new Date().toISOString()
+        };
+        bs.pushDownloadRecord(rec);
+        bs.logAction('browser.download_error', rec);
+      }
+    };
+
+    const attachPage = (pg) => {
+      if (!pg || pg.__aihelperDlPage) return;
+      pg.__aihelperDlPage = true;
+      pg.on('download', onDownload);
+    };
+
+    try {
+      for (const pg of context.pages()) attachPage(pg);
+    } catch (_) {}
+    context.on('page', attachPage);
+  }
+
+  async function applyCdpDownloadBehavior(context, page, dlRoot) {
+    try {
+      ensureDir(dlRoot);
+      const client = await context.newCDPSession(page);
+      // Chromium/Edge：允许下载并指定路径（Playwright 仍会再 saveAs）
+      await client.send('Browser.setDownloadBehavior', {
+        behavior: 'allowAndName',
+        downloadPath: dlRoot,
+        eventsEnabled: true
+      }).catch(async () => {
+        await client.send('Page.setDownloadBehavior', {
+          behavior: 'allow',
+          downloadPath: dlRoot
+        });
+      });
+    } catch (err) {
+      bs.logAction('browser.cdp_download_warn', {
+        error: (err && err.message) || String(err),
+        downloadDir: dlRoot
+      });
+    }
   }
 
   async function resolveLocator(p, args) {

@@ -33,46 +33,64 @@ class LLMProvider {
     };
     if (options.tools && options.tools.length) {
       body.tools = options.tools;
-      body.tool_choice = options.tool_choice || 'auto';
+      // 仅当显式传入才带 tool_choice。thinking 模型（如 deepseek-flash）
+      // 常拒绝 required/auto，省略字段由服务端默认处理更稳。
+      if (options.tool_choice != null && options.tool_choice !== '') {
+        body.tool_choice = options.tool_choice;
+      }
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), p.timeoutMs || 120000);
-    if (options.signal) {
-      options.signal.addEventListener('abort', () => controller.abort());
-    }
+    const doRequest = async (payload) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), p.timeoutMs || 120000);
+      if (options.signal) {
+        const onAbort = () => controller.abort();
+        if (options.signal.aborted) controller.abort();
+        else options.signal.addEventListener('abort', onAbort, { once: true });
+      }
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (p.apiKey) headers.Authorization = `Bearer ${p.apiKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`模型返回非 JSON (${res.status}): ${text.slice(0, 500)}`);
+        }
+        if (!res.ok) {
+          const msg = data.error?.message || data.message || text.slice(0, 500);
+          const err = new Error(`模型请求失败 ${res.status}: ${msg}`);
+          err.status = res.status;
+          err.apiMessage = msg;
+          throw err;
+        }
+        return data;
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
 
     try {
-      const headers = {
-        'Content-Type': 'application/json'
-      };
-      if (p.apiKey) {
-        headers.Authorization = `Bearer ${p.apiKey}`;
-      }
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
-
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(`模型返回非 JSON (${res.status}): ${text.slice(0, 500)}`);
-      }
-
-      if (!res.ok) {
-        const msg = data.error?.message || data.message || text.slice(0, 500);
-        throw new Error(`模型请求失败 ${res.status}: ${msg}`);
-      }
-
-      return data;
-    } finally {
-      clearTimeout(timeout);
+      return await doRequest(body);
+    } catch (err) {
+      const em = String((err && (err.apiMessage || err.message)) || err);
+      const rejectTc =
+        body.tools &&
+        body.tool_choice != null &&
+        /tool_choice/i.test(em) &&
+        (/thinking/i.test(em) || /does not support/i.test(em) || err.status === 400);
+      if (!rejectTc) throw err;
+      // 去掉 tool_choice 再试（thinking 模式常见限制）
+      const retry = { ...body };
+      delete retry.tool_choice;
+      return await doRequest(retry);
     }
   }
 
