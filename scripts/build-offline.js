@@ -195,33 +195,6 @@ function main() {
   console.log('复制绿色版 win-unpacked …');
   copyDir(winUnpacked, path.join(outDir, 'win-unpacked'));
 
-  const ver = pkg.version || '0.0.0';
-  const zipName = `AIHelper-Agent-${ver}-win-x64-green.zip`;
-  const zipPath = path.join(outDir, zipName);
-  try {
-    for (const n of fs.readdirSync(outDir)) {
-      if (
-        /^AIHelper-Agent-.*-win-x64-green\.zip$/i.test(n) &&
-        n !== zipName
-      ) {
-        console.log('删除旧离线包', n);
-        fs.unlinkSync(path.join(outDir, n));
-      }
-    }
-  } catch (_) {}
-  console.log('压缩绿色版 ZIP …', zipName, '(version from package.json =', ver + ')');
-  try {
-    zipDir(path.join(outDir, 'win-unpacked'), zipPath);
-  } catch (e) {
-    try {
-      execSync(`tar -a -c -f "${zipPath}" -C "${path.join(outDir, 'win-unpacked')}" .`, {
-        stdio: 'inherit'
-      });
-    } catch (e2) {
-      console.warn('ZIP 压缩失败，仍可直接拷贝 win-unpacked 目录:', e2.message);
-    }
-  }
-
   function hasChromium(dir) {
     if (!dir || !fs.existsSync(dir)) return false;
     try {
@@ -248,12 +221,40 @@ function main() {
       break;
     }
   }
+  // 必须先拷浏览器再打 zip，否则 zip 里没有 Chromium
   if (browserSrc) {
     console.log('附带浏览器缓存:', browserSrc);
     copyDir(browserSrc, path.join(outDir, 'browsers', 'ms-playwright'));
     copyDir(browserSrc, path.join(outDir, 'win-unpacked', 'resources', 'playwright-browsers'));
   } else {
     console.warn('未找到 Chromium，绿色版将依赖系统 Chrome/Edge 或安装浏览器缓存.bat');
+  }
+
+  const ver = pkg.version || '0.0.0';
+  const zipName = `AIHelper-Agent-${ver}-win-x64-green.zip`;
+  const zipPath = path.join(outDir, zipName);
+  try {
+    for (const n of fs.readdirSync(outDir)) {
+      if (
+        /^AIHelper-Agent-.*-win-x64-green\.zip$/i.test(n) &&
+        n !== zipName
+      ) {
+        console.log('删除旧离线包', n);
+        fs.unlinkSync(path.join(outDir, n));
+      }
+    }
+  } catch (_) {}
+  console.log('压缩绿色版 ZIP …', zipName, '(version from package.json =', ver + ')');
+  try {
+    zipDir(path.join(outDir, 'win-unpacked'), zipPath);
+  } catch (e) {
+    try {
+      execSync(`tar -a -c -f "${zipPath}" -C "${path.join(outDir, 'win-unpacked')}" .`, {
+        stdio: 'inherit'
+      });
+    } catch (e2) {
+      console.warn('ZIP 压缩失败，仍可直接拷贝 win-unpacked 目录:', e2.message);
+    }
   }
 
   copyDir(path.join(root, 'config'), path.join(outDir, 'config-sample'));
