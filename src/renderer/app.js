@@ -218,6 +218,13 @@
       $('cfgBrowserExe').value =
         c.tools?.browser?.executablePath || c.tools?.browser?.chromePath || '';
     }
+    if ($('cfgBrowserUserData')) {
+      $('cfgBrowserUserData').value = c.tools?.browser?.userDataDir || '';
+    }
+    if ($('cfgBrowserEphemeral')) {
+      $('cfgBrowserEphemeral').checked =
+        c.tools?.browser?.ephemeral === true || c.tools?.browser?.incognito === true;
+    }
     $('cfgAllowedRoots').value = (c.tools?.file?.allowedRoots || []).join('\n');
     const lg = c.logging || {};
     $('cfgLogEnabled').checked = lg.enabled !== false;
@@ -301,6 +308,12 @@
     state.config.tools.browser.keepSession = $('cfgBrowserKeep').checked;
     if ($('cfgBrowserExe')) {
       state.config.tools.browser.executablePath = ($('cfgBrowserExe').value || '').trim();
+    }
+    if ($('cfgBrowserUserData')) {
+      state.config.tools.browser.userDataDir = ($('cfgBrowserUserData').value || '').trim();
+    }
+    if ($('cfgBrowserEphemeral')) {
+      state.config.tools.browser.ephemeral = $('cfgBrowserEphemeral').checked;
     }
     state.config.tools.file.allowedRoots = $('cfgAllowedRoots').value
       .split(/\r?\n/)

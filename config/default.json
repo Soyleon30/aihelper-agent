@@ -88,6 +88,7 @@
       "timeoutMs": 30000,
       "defaultViewport": { "width": 1366, "height": 768 },
       "userDataDir": "",
+      "ephemeral": false,
       "stealth": true,
       "preferSystemBrowser": true,
       "executablePath": "",

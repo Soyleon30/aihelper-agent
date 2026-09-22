@@ -540,19 +540,35 @@ function createBrowserTools(options = {}) {
       }
     };
 
-    if (cfg.userDataDir) {
+    // 持久配置档：登录态/Cookie 可保留。默认 userData/browser-profile（非系统日常 Chrome 目录，避免冲突）
+    // 设 tools.browser.userDataDir="" 且 ephemeral=true 才每次无痕
+    const ephemeral = cfg.ephemeral === true || cfg.incognito === true;
+    let profileDir = String(cfg.userDataDir || '').trim();
+    if (!ephemeral && !profileDir) {
+      profileDir = path.join(userDataPath || process.cwd(), 'browser-profile');
+    }
+    shared.userDataDir = profileDir || '';
+    shared.ephemeral = !!ephemeral;
+
+    if (profileDir && !ephemeral) {
       try {
-        shared.context = await pw.chromium.launchPersistentContext(cfg.userDataDir, {
+        ensureDir(profileDir);
+        shared.context = await pw.chromium.launchPersistentContext(profileDir, {
           ...launchOpts,
           ...contextOpts
         });
         shared.browser = shared.context.browser ? shared.context.browser() : null;
         shared.page = shared.context.pages()[0] || (await shared.context.newPage());
       } catch (err) {
+        // 常见：配置档被另一 Chrome/上次残留进程占用
         shared.browser = await pw.chromium.launch(launchOpts);
         shared.context = await shared.browser.newContext(contextOpts);
         shared.page = await shared.context.newPage();
-        bs.logAction('browser.userdata_fallback', { error: err.message });
+        bs.logAction('browser.userdata_fallback', {
+          error: err.message,
+          profileDir,
+          hint: '请关闭占用该配置档的浏览器后重试；或换 userDataDir'
+        });
       }
     } else {
       shared.browser = await pw.chromium.launch(launchOpts);
@@ -599,6 +615,8 @@ function createBrowserTools(options = {}) {
       stealth: stealthEnabled(),
       keepSession,
       downloadDir: dlRoot,
+      userDataDir: shared.userDataDir || '',
+      ephemeral: !!shared.ephemeral,
       browserName: shared.browserName,
       executablePath: launchOpts.executablePath || launchOpts.channel || 'bundled',
       chromeInstalled: !!bs.findSystemChrome(),

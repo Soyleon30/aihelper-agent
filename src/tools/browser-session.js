@@ -131,9 +131,13 @@ async function getState() {
       textPreview,
       launchedAt: shared.launchedAt,
       downloadDir: shared.downloadDir || '',
+      userDataDir: shared.userDataDir || '',
+      ephemeral: !!shared.ephemeral,
       recentDownloads: recent,
       ...browserMeta,
-      hint: `当前是本机 ${name}（非无头）。下载最终文件在 downloadDir，勿看 Temp/playwright-artifacts。可在当前页继续 click/type。`
+      hint: shared.ephemeral
+        ? `当前 ${name} 为临时配置（无痕）。要保留登录：设置里配置浏览器用户数据目录，或关闭「每次无痕」。`
+        : `当前 ${name} 使用持久配置档（登录可保留）。下载看 downloadDir。`
     };
   } catch (err) {
     return {

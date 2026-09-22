@@ -6,12 +6,17 @@
 
 ---
 
+## [1.6.3] — 2026-09-22
+
+### 浏览器登录可保留（非无痕）
+- 默认使用持久配置档：`userData/browser-profile`（`launchPersistentContext`）
+- 设置可填「浏览器用户数据目录」；勾选「每次无痕」则仍临时配置
+- **不要**填正在使用的系统 Chrome/Edge 用户目录（会冲突）；Agent 用独立目录即可保留登录
+
 ## [1.6.2] — 2026-09-22
 
-### 修复「点击按钮下载无效」
-- **根因**：解析下载 URL 时对 Playwright `download` 调用了 `cancel()`，等于把用户点击下载取消了
-- `browser_download` 改为：点击 → 等全局 download 监听 `saveAs`（**不 cancel**）→ 失败再试 HTTP URL
-- `browser_navigate` 打开 zip/tar 等直链时捕获下载，不再只报 `Download is starting`
+### 修复点击下载被 cancel
+- 不再 cancel Playwright download；以 saveAs 为主路径
 
 ## [1.6.1] — 2026-09-22
 

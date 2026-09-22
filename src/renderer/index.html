@@ -305,8 +305,16 @@
               <span>浏览器可执行文件（空=自动；本机无 Chrome 时会用 Edge）</span>
               <input id="cfgBrowserExe" type="text" placeholder="例如 C:\Program Files\Google\Chrome\Application\chrome.exe" />
             </label>
+            <label class="field">
+              <span>浏览器用户数据目录（空=自动 %APPDATA%\…\browser-profile，保留登录）</span>
+              <input id="cfgBrowserUserData" type="text" placeholder="空=默认持久配置；勿填正在使用的系统 Chrome 用户目录" />
+            </label>
+            <label class="field checkbox">
+              <input id="cfgBrowserEphemeral" type="checkbox" />
+              <span>每次无痕（不保留登录/Cookie）</span>
+            </label>
             <p class="muted" style="margin:4px 0 0;font-size:12px;">
-              默认有界面。本机未装 Google Chrome 时「打开 chrome」实际是 Edge——属正常。下载最终在「下载目录」，浏览器栏若显示 Temp 路径可忽略。保持会话时对话切换不关页。
+              默认有界面 + 独立配置档（登录可保留）。勿与正在运行的 Chrome/Edge 共用同一用户目录。下载目录见上方。保持会话时对话切换不关页。
             </p>
             <label class="field">
               <span>文件允许根目录（每行一个，空=不限制）</span>
