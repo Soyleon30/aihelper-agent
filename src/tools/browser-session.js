@@ -274,50 +274,26 @@ function ensurePlaywrightBrowsersEnv() {
   return null;
 }
 
-function readAppPathFromRegistry(appName) {
-  // 非 Electron 主进程也可能读注册表；失败则忽略
-  try {
-    const { execSync } = require('child_process');
-    const key = `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\${appName}`;
-    const out = execSync(`reg query "${key}" /ve`, {
-      encoding: 'utf8',
-      windowsHide: true,
-      timeout: 3000
-    });
-    const m = /REG_SZ\s+(.+)$/im.exec(out);
-    if (m) {
-      const p = m[1].trim().replace(/^"|"$/g, '');
-      if (p && fs.existsSync(p)) return p;
-    }
-  } catch (_) {}
-  return null;
-}
-
 function findChromeCandidates() {
+  // 只查常见路径 + 环境变量，不调 reg.exe（中文错误会污染 stderr 成「锟斤拷」）
   const local =
     process.env.LOCALAPPDATA ||
     (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local') : '');
-  const list = [
+  return [
     process.env.CHROME_PATH,
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     local ? path.join(local, 'Google', 'Chrome', 'Application', 'chrome.exe') : ''
   ].filter(Boolean);
-  const reg = readAppPathFromRegistry('chrome.exe');
-  if (reg) list.unshift(reg);
-  return list;
 }
 
 function findEdgeCandidates() {
-  const list = [
+  return [
     process.env.EDGE_PATH,
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
   ].filter(Boolean);
-  const reg = readAppPathFromRegistry('msedge.exe');
-  if (reg) list.unshift(reg);
-  return list;
 }
 
 function firstExisting(paths) {

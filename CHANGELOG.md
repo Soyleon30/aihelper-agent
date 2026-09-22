@@ -6,12 +6,16 @@
 
 ---
 
+## [1.5.8] — 2026-09-22
+
+### 去掉 reg.exe 污染日志
+- 删除 `reg query` 查 Chrome/Edge（键不存在时中文 stderr「系统找不到指定的注册表项」被误读成「锟斤拷」）
+- 仍用固定路径 + `CHROME_PATH` / `EDGE_PATH` / 设置里 executablePath
+
 ## [1.5.7] — 2026-09-22
 
-### 真正让 downloadsPath 生效
-- Playwright 普通模式会**丢弃** `launch.downloadsPath`，强制 `%TEMP%/playwright-artifacts` + UUID
-- 启动时设置 `PWTEST_UNDER_TEST=1`（main + require playwright 前），使 downloadsPath 指向配置下载目录
-- saveAs 后清理目录内残留 UUID 文件名
+### downloadsPath 生效
+- `PWTEST_UNDER_TEST=1` 使 Playwright 接受 downloadsPath（否则强制 E:\\Temp\\playwright-artifacts）
 
 ## [1.5.6] — 2026-09-22
 
