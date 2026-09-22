@@ -479,10 +479,21 @@ function createBrowserTools(options = {}) {
 
     const pw = await ensurePlaywright();
     const headless = cfg.headless === true;
+
+    const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
+    try {
+      ensureDir(dlRoot);
+    } catch (_) {}
+    shared.downloadDir = dlRoot;
+    if (!Array.isArray(shared.recentDownloads)) shared.recentDownloads = [];
+    if (!Array.isArray(shared.downloadWaiters)) shared.downloadWaiters = [];
+
+    // downloadsPath 必须在 launch / launchPersistentContext 上（写在 newContext 无效 → 会落到 %TEMP%/playwright-artifacts）
     const launchOpts = {
       headless,
       args: buildLaunchArgs(),
-      ignoreDefaultArgs: stealthEnabled() ? ['--enable-automation'] : undefined
+      ignoreDefaultArgs: stealthEnabled() ? ['--enable-automation'] : undefined,
+      downloadsPath: dlRoot
     };
 
     const preferSystem = cfg.preferSystemBrowser !== false;
@@ -503,14 +514,6 @@ function createBrowserTools(options = {}) {
       cfg.userAgent ||
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
-    const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
-    try {
-      ensureDir(dlRoot);
-    } catch (_) {}
-    shared.downloadDir = dlRoot;
-    if (!Array.isArray(shared.recentDownloads)) shared.recentDownloads = [];
-    if (!Array.isArray(shared.downloadWaiters)) shared.downloadWaiters = [];
-
     const contextOpts = {
       viewport: cfg.defaultViewport || { width: 1366, height: 768 },
       ignoreHTTPSErrors: cfg.ignoreHTTPSErrors !== false,
@@ -523,8 +526,6 @@ function createBrowserTools(options = {}) {
       isMobile: false,
       javaScriptEnabled: true,
       acceptDownloads: true,
-      // Playwright 将浏览器下载落到此目录；再 saveAs 到最终文件名（修复中文）
-      downloadsPath: dlRoot,
       extraHTTPHeaders: {
         'Accept-Language': cfg.acceptLanguage || 'zh-CN,zh;q=0.9,en;q=0.8',
         ...(cfg.extraHeaders || {})
@@ -633,6 +634,16 @@ function createBrowserTools(options = {}) {
           `download-${Date.now()}`;
         const dest = uniquePath(dlRoot, safe);
         await download.saveAs(dest);
+        // 若 launch.downloadsPath 已把 UUID 落到 dlRoot，删掉残留 UUID（最终只用 dest 文件名）
+        if (
+          artifactPath &&
+          path.resolve(path.dirname(artifactPath)) === path.resolve(dlRoot) &&
+          path.resolve(artifactPath) !== path.resolve(dest)
+        ) {
+          try {
+            if (fsSync.existsSync(artifactPath)) fsSync.unlinkSync(artifactPath);
+          } catch (_) {}
+        }
         let size = 0;
         try {
           size = fsSync.statSync(dest).size;
@@ -645,8 +656,6 @@ function createBrowserTools(options = {}) {
           url,
           suggestedRaw,
           size,
-          note:
-            '最终文件在 path；浏览器下载栏若显示 Temp/playwright-artifacts 可忽略，请到 downloadDir 打开',
           downloadDir: dlRoot,
           at: new Date().toISOString()
         };

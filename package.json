@@ -1,6 +1,6 @@
 {
   "name": "aihelper-agent",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "离线可用的 AI Agent：本地/API 模型、文件与网页自动化",
   "main": "electron/main.js",
   "author": "AI Helper",

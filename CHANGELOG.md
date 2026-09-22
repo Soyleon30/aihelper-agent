@@ -6,12 +6,20 @@
 
 ---
 
+## [1.5.6] — 2026-09-22
+
+### 根治下载落到 E:\\Temp\\playwright-artifacts
+- **Bug**：`downloadsPath` 误写在 `newContext`，Playwright 只认 **`chromium.launch({ downloadsPath })`**，故一直进 `%TEMP%`
+- 已改到 `launch` / `launchPersistentContext`；浏览器可见路径与 `saveAs` 均在配置的下载目录
+
+### 本机 Chrome
+- 设置 →「浏览器可执行文件」填 `chrome.exe` 完整路径即可（也可环境变量 `CHROME_PATH`）
+
 ## [1.5.5] — 2026-09-22
 
-### 下载「已删除」与 Chrome/Edge 说明
-- **不再删除** playwright-artifacts 临时文件（删了 Edge 下载栏会显示已删除；最终文件仍在配置下载目录）
-- 本机无 Google Chrome 时会用 **Edge**（日志 `executablePath=msedge.exe`）；设置页可填 `executablePath`
-- `browser_state` / launch 日志带 `browserName`、`executablePath`、`chromeInstalled`
+### 下载与 Chrome/Edge
+- 本机无 Chrome 时用 Edge；设置可填 `executablePath`
+- `browser_state` 带 `browserName` / `executablePath`
 
 ## [1.5.4] — 2026-09-22
 
