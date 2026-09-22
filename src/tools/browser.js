@@ -1043,100 +1043,168 @@ function createBrowserTools(options = {}) {
     );
   }
 
-  async function resolveDownloadUrl(p, args = {}) {
-    const timeoutMs = Math.max(3000, Number(args.timeoutMs) || 20000);
-    if (args.url && /^https?:\/\//i.test(String(args.url))) {
-      return { url: String(args.url).trim(), method: 'given-url' };
-    }
+  async function savePlaywrightDownload(download, opts = {}) {
+    const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
+    ensureDir(dlRoot);
+    const fsSync = require('fs');
+    let url = '';
+    let suggestedRaw = '';
+    try {
+      url = download.url() || '';
+    } catch (_) {}
+    try {
+      suggestedRaw = download.suggestedFilename() || '';
+    } catch (_) {}
+    const safe =
+      opts.filename ||
+      pickDownloadFilename({ suggested: suggestedRaw, url }) ||
+      `download-${Date.now()}`;
+    const dest = uniquePath(dlRoot, safe);
+    await download.saveAs(dest);
+    let size = 0;
+    try {
+      size = fsSync.statSync(dest).size;
+    } catch (_) {}
+    if (!size) throw new Error('saveAs 后文件为空: ' + dest);
+    // 按内容补扩展名
+    let finalPath = dest;
+    try {
+      const buf = fsSync.readFileSync(dest);
+      const kind = sniffBinaryKind(buf);
+      if (kind && kind !== 'html') {
+        const want = kind === 'jpg' ? ['.jpg', '.jpeg', '.jfif'] : ['.' + kind];
+        const cur = path.extname(dest).toLowerCase();
+        if (!want.includes(cur)) {
+          const next =
+            dest.replace(/\.[^.]+$/, '') + (kind === 'jpg' ? '.jpg' : '.' + kind);
+          const nextUnique = uniquePath(path.dirname(next), path.basename(next));
+          fsSync.renameSync(dest, nextUnique);
+          finalPath = nextUnique;
+        }
+      }
+    } catch (_) {}
+    const rec = {
+      ok: true,
+      path: finalPath,
+      filename: path.basename(finalPath),
+      url,
+      suggestedRaw,
+      size: fsSync.statSync(finalPath).size,
+      downloadDir: dlRoot,
+      via: 'playwright-saveAs',
+      at: new Date().toISOString()
+    };
+    bs.pushDownloadRecord(rec);
+    bs.logAction('browser.download', rec);
+    return rec;
+  }
 
+  /**
+   * 点击并捕获下载：优先 Playwright download 事件 saveAs（不 cancel！）
+   * 同时记录网络里出现的文件 URL，供 HTTP 补下。
+   */
+  async function clickAndCaptureDownload(p, args = {}) {
+    const timeoutMs = Math.max(5000, Number(args.timeoutMs) || 60000);
+    const shared = bs.getShared();
+    const context = shared.context;
+    if (!context) return { ok: false, error: '浏览器未就绪' };
+
+    // 先试 DOM href，无需点击
     if (args.selector || args.text) {
       const hrefHit = await extractHrefFromTarget(p, args).catch(() => null);
       if (hrefHit && hrefHit.url && /^https?:\/\//i.test(hrefHit.url)) {
-        return { url: hrefHit.url, method: 'dom-' + (hrefHit.via || 'href') };
+        return {
+          ok: true,
+          url: hrefHit.url,
+          method: 'dom-' + (hrefHit.via || 'href'),
+          needHttp: true
+        };
       }
     }
 
-    if (args.click === false) {
-      return { url: '', method: 'none', error: '未找到可下载链接（click=false）' };
-    }
-
-    const shared = bs.getShared();
-    const context = shared.context;
-    if (!context) return { url: '', method: 'none', error: '浏览器未就绪' };
-
-    let resolved = '';
-    let method = 'network';
+    let netUrl = '';
+    let netMethod = '';
     const onRequest = (req) => {
       try {
         const u = req.url();
-        if (looksLikeFileUrl(u) && !resolved) {
-          resolved = u;
-          method = 'request';
+        if (looksLikeFileUrl(u) && !netUrl) {
+          netUrl = u;
+          netMethod = 'request';
         }
       } catch (_) {}
     };
     const onResponse = (res) => {
       try {
-        if (isDownloadResponse(res) && !resolved) {
-          resolved = res.url();
-          method = 'response';
+        if (isDownloadResponse(res) && !netUrl) {
+          netUrl = res.url();
+          netMethod = 'response';
         }
       } catch (_) {}
     };
     context.on('request', onRequest);
     context.on('response', onResponse);
 
-    const dlWait = p
-      .waitForEvent('download', { timeout: timeoutMs })
-      .then((d) => {
-        try {
-          const u = d.url();
-          if (u && /^https?:\/\//i.test(u)) {
-            resolved = u;
-            method = 'playwright-download-url';
-          }
-        } catch (_) {}
-        // 取消 Playwright 落盘，我们改走 HTTP
-        try {
-          d.cancel();
-        } catch (_) {}
-        return d;
-      })
-      .catch(() => null);
+    // 只等全局 page.on('download')→saveAs（bindContextDownloads），勿再 waitForEvent+saveAs 以免二次 saveAs 失败
+    // 绝不能 cancel download
+    const waiterPromise = bs.waitNextDownload(timeoutMs).catch(() => null);
 
     try {
       if (args.selector || args.text) {
         await robustClick(p, args);
-      } else if (args.url) {
-        await p.goto(args.url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
       } else {
-        return { url: '', method: 'none', error: '需要 selector/text/url 之一' };
+        return { ok: false, error: '需要 selector 或 text' };
       }
-      await Promise.race([
-        dlWait,
-        new Promise((r) => setTimeout(r, timeoutMs)),
-        p.waitForTimeout(Math.min(1500, timeoutMs)).then(async () => {
-          // 短等后若已有网络结果可提前结束
-          for (let i = 0; i < 10 && !resolved; i++) {
-            await new Promise((x) => setTimeout(x, 200));
-          }
-        })
-      ]);
+
+      const waited = await waiterPromise;
+      if (waited && waited.ok && waited.path) {
+        // 可选：用户指定了 filename 且与结果不同时不强制改名（已落盘）
+        return { ok: true, method: 'playwright-download', saved: waited };
+      }
+      if (waited && waited.ok === false && netUrl && /^https?:\/\//i.test(netUrl)) {
+        return { ok: true, url: netUrl, method: netMethod || 'network', needHttp: true };
+      }
+      if (netUrl && /^https?:\/\//i.test(netUrl)) {
+        return { ok: true, url: netUrl, method: netMethod || 'network', needHttp: true };
+      }
+      return {
+        ok: false,
+        error:
+          (waited && waited.error) ||
+          '点击后未出现下载事件，也未拦截到文件 URL。请确认按钮会触发文件下载，或提供更精确的 selector',
+        method: 'none'
+      };
     } finally {
       try {
         context.off('request', onRequest);
         context.off('response', onResponse);
       } catch (_) {}
     }
+  }
 
-    if (resolved && /^https?:\/\//i.test(resolved)) {
-      return { url: resolved, method };
+  async function resolveDownloadUrl(p, args = {}) {
+    if (args.url && /^https?:\/\//i.test(String(args.url))) {
+      return { url: String(args.url).trim(), method: 'given-url' };
     }
-    return {
-      url: '',
-      method: 'none',
-      error: '未能解析到 http(s) 下载地址（可能是 blob/仅本地点击下载）'
-    };
+    if (args.selector || args.text) {
+      const hrefHit = await extractHrefFromTarget(p, args).catch(() => null);
+      if (hrefHit && hrefHit.url && /^https?:\/\//i.test(hrefHit.url)) {
+        return { url: hrefHit.url, method: 'dom-' + (hrefHit.via || 'href') };
+      }
+    }
+    if (args.click === false) {
+      return { url: '', method: 'none', error: '未找到可下载链接（click=false）' };
+    }
+    const cap = await clickAndCaptureDownload(p, args);
+    if (cap.saved && cap.saved.ok) {
+      return {
+        url: cap.saved.url || '',
+        method: cap.method,
+        saved: cap.saved,
+        alreadySaved: true
+      };
+    }
+    if (cap.url) return { url: cap.url, method: cap.method };
+    return { url: '', method: 'none', error: cap.error || '未能解析下载地址' };
   }
 
   async function cookieHeaderForUrl(targetUrl) {
@@ -1493,7 +1561,41 @@ function createBrowserTools(options = {}) {
       return withStep('browser_navigate', args, async () => {
         const p = await ensurePage();
         const waitUntil = args.waitUntil || 'domcontentloaded';
-        await p.goto(args.url, { waitUntil, timeout: cfg.timeoutMs || 30000 });
+        const target = String(args.url || '');
+        // 直接打开会触发下载的 URL：捕获 download，不要当成导航失败
+        const mayDownload =
+          looksLikeFileUrl(target) ||
+          /\.(zip|tar|tgz|gz|xlsx?|pdf|rar|7z)(\?|$)/i.test(target);
+        if (mayDownload) {
+          const waiter = bs.waitNextDownload(args.timeoutMs || cfg.timeoutMs || 60000);
+          try {
+            await p.goto(target, {
+              waitUntil: 'commit',
+              timeout: args.timeoutMs || cfg.timeoutMs || 60000
+            });
+          } catch (err) {
+            const msg = String(err && err.message ? err.message : err);
+            if (!/Download is starting/i.test(msg)) {
+              // 仍可能已触发 download
+            }
+          }
+          try {
+            const rec = await waiter;
+            if (rec && rec.ok) {
+              return {
+                ok: true,
+                navigatedAsDownload: true,
+                ...rec,
+                message: `URL 触发下载，已保存: ${rec.path}`
+              };
+            }
+          } catch (_) {}
+        } else {
+          await p.goto(target, {
+            waitUntil,
+            timeout: args.timeoutMs || cfg.timeoutMs || 30000
+          });
+        }
         const sh = bs.getShared();
         const out = {
           url: p.url(),
@@ -1598,68 +1700,84 @@ function createBrowserTools(options = {}) {
     },
 
     /**
-     * 推荐：解析 URL（DOM/点击拦截）→ 带浏览器 Cookie 用 HTTP 下载到配置目录。
-     * 避开 Playwright Temp/UUID；最终 path 为真实文件名。
+     * 推荐：点下载按钮 → Playwright download saveAs（主路径，不 cancel）
+     * 或已有 href/url → HTTP 落盘。最终在配置下载目录。
      */
     async browser_download(args) {
       return withStep('browser_download', args, async () => {
         const p = await ensurePage();
         const a = args || {};
-        let fileUrl = a.url && /^https?:\/\//i.test(String(a.url)) ? String(a.url).trim() : '';
-        let resolveMethod = fileUrl ? 'given-url' : '';
+        const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
 
-        if (!fileUrl) {
-          const hit = await resolveDownloadUrl(p, {
-            selector: a.selector,
-            text: a.text,
-            url: a.navigateUrl,
-            click: a.click !== false,
-            timeoutMs: a.timeoutMs || 20000
+        // 已知 URL：HTTP / page.goto-body
+        if (a.url && /^https?:\/\//i.test(String(a.url))) {
+          const saved = await httpDownloadToDir(String(a.url).trim(), {
+            filename: a.filename,
+            timeoutMs: a.timeoutMs,
+            headers: a.headers
           });
-          fileUrl = hit.url || '';
-          resolveMethod = hit.method;
-          if (!fileUrl) {
-            // 回退：Playwright download 管道
-            if (a.fallbackPlaywright !== false && (a.selector || a.text)) {
-              const dlPromise = bs.waitNextDownload(a.timeoutMs || 60000);
-              await robustClick(p, a);
-              try {
-                const rec = await dlPromise;
-                return {
-                  ok: !!rec.ok,
-                  ...rec,
-                  resolveMethod: 'playwright-download-fallback',
-                  message: rec.ok
-                    ? `已保存（Playwright 回退）: ${rec.path}`
-                    : rec.error || '下载失败'
-                };
-              } catch (err) {
-                return {
-                  ok: false,
-                  error: hit.error || err.message || String(err),
-                  resolveMethod,
-                  downloadDir: resolveBrowserDownloadDir(cfg, userDataPath)
-                };
-              }
-            }
+          return {
+            ...saved,
+            resolveMethod: 'given-url',
+            message: `已保存到 ${saved.path}`
+          };
+        }
+
+        if (!a.selector && !a.text) {
+          return {
+            ok: false,
+            error: '请提供 selector、text 或 url',
+            downloadDir: dlRoot
+          };
+        }
+
+        // 主路径：点一次，等 download 事件并 saveAs（修复此前 cancel 导致无效）
+        const cap = await clickAndCaptureDownload(p, {
+          selector: a.selector,
+          text: a.text,
+          filename: a.filename,
+          timeoutMs: a.timeoutMs || 60000
+        });
+
+        if (cap.saved && cap.saved.ok) {
+          return {
+            ...cap.saved,
+            resolveMethod: cap.method,
+            message: `已保存到 ${cap.saved.path}`
+          };
+        }
+
+        // 拦到了 http(s) 文件 URL：再 HTTP 拉一次
+        if (cap.needHttp && cap.url && /^https?:\/\//i.test(cap.url)) {
+          try {
+            const saved = await httpDownloadToDir(cap.url, {
+              filename: a.filename,
+              timeoutMs: a.timeoutMs,
+              headers: a.headers
+            });
+            return {
+              ...saved,
+              resolveMethod: cap.method,
+              message: `已保存到 ${saved.path}`
+            };
+          } catch (err) {
             return {
               ok: false,
-              error: hit.error || '未能解析下载 URL',
-              resolveMethod,
-              downloadDir: resolveBrowserDownloadDir(cfg, userDataPath)
+              error: err.message || String(err),
+              url: cap.url,
+              resolveMethod: cap.method,
+              downloadDir: dlRoot
             };
           }
         }
 
-        const saved = await httpDownloadToDir(fileUrl, {
-          filename: a.filename,
-          timeoutMs: a.timeoutMs,
-          headers: a.headers
-        });
         return {
-          ...saved,
-          resolveMethod,
-          message: `已保存到 ${saved.path}（HTTP+浏览器Cookie，非 Temp）`
+          ok: false,
+          error: cap.error || '点击下载失败：未捕获到文件',
+          resolveMethod: cap.method || 'none',
+          downloadDir: dlRoot,
+          hint:
+            '请确认按钮会触发浏览器下载；可 browser_record 手点一次，或把按钮 selector 发我'
         };
       });
     },

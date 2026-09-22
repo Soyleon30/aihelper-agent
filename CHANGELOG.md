@@ -6,12 +6,17 @@
 
 ---
 
+## [1.6.2] — 2026-09-22
+
+### 修复「点击按钮下载无效」
+- **根因**：解析下载 URL 时对 Playwright `download` 调用了 `cancel()`，等于把用户点击下载取消了
+- `browser_download` 改为：点击 → 等全局 download 监听 `saveAs`（**不 cancel**）→ 失败再试 HTTP URL
+- `browser_navigate` 打开 zip/tar 等直链时捕获下载，不再只报 `Download is starting`
+
 ## [1.6.1] — 2026-09-22
 
 ### 下载识别加强（tar/excel 等）
-- URL/Content-Type 覆盖 `.tar/.tgz/.gz`、xlsx/xls、octet-stream、force-download
-- 文件头嗅探：gzip、ustar tar、zip(xlsx 同为 PK)
-- **说明**：标准「按钮→带 attachment 的 http 下载」可拦截；纯 blob/多步鉴权/无网络响应的导出仍可能需 Playwright 回退或业务适配
+- URL/Content-Type 覆盖 tar/xlsx/octet-stream；文件头嗅探 gzip/tar/zip
 
 ## [1.6.0] — 2026-09-22
 
