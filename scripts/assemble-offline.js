@@ -161,20 +161,12 @@ function main() {
   } catch (_) {}
   console.log('压缩 ZIP …', zipName, '(version from package.json)');
   try {
-    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-    execSync(
-      `tar -a -c -f "${zipPath}" -C "${path.join(outDir, 'win-unpacked')}" .`,
-      { stdio: 'inherit' }
-    );
+    const { zipDir, validateZip } = require('./zip-dir');
+    zipDir(path.join(outDir, 'win-unpacked'), zipPath);
+    const chk = validateZip(zipPath);
+    if (!chk.ok) console.warn('ZIP 校验失败:', chk.error);
   } catch (e) {
-    try {
-      execSync(
-        `powershell -NoProfile -Command "Compress-Archive -Path '${path.join(outDir, 'win-unpacked')}\\*' -DestinationPath '${zipPath}' -Force"`,
-        { stdio: 'inherit' }
-      );
-    } catch (e2) {
-      console.warn('ZIP 失败，可直接拷贝 win-unpacked:', e2.message);
-    }
+    console.warn('ZIP 失败，可直接拷贝 win-unpacked:', e.message);
   }
 
   copyDir(path.join(root, 'config'), path.join(outDir, 'config-sample'));

@@ -42,13 +42,7 @@ function copyDir(src, dest) {
   fs.cpSync(src, dest, { recursive: true });
 }
 
-function zipDir(srcDir, zipPath) {
-  ensureDir(path.dirname(zipPath));
-  if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-  // PowerShell Compress-Archive（Windows 自带）
-  const ps = `Compress-Archive -Path '${srcDir.replace(/'/g, "''")}\\*' -DestinationPath '${zipPath.replace(/'/g, "''")}' -Force`;
-  execSync(`powershell -NoProfile -Command "${ps}"`, { stdio: 'inherit', cwd: root });
-}
+const { zipDir, validateZip } = require('./zip-dir');
 
 function killLockingProcesses() {
   // electron-builder 写 asar integrity 时会打开 AIHelper Agent.exe；若进程/资源管理器占用会 UNKNOWN open 失败
@@ -247,14 +241,13 @@ function main() {
   console.log('压缩绿色版 ZIP …', zipName, '(version from package.json =', ver + ')');
   try {
     zipDir(path.join(outDir, 'win-unpacked'), zipPath);
-  } catch (e) {
-    try {
-      execSync(`tar -a -c -f "${zipPath}" -C "${path.join(outDir, 'win-unpacked')}" .`, {
-        stdio: 'inherit'
-      });
-    } catch (e2) {
-      console.warn('ZIP 压缩失败，仍可直接拷贝 win-unpacked 目录:', e2.message);
+    const chk = validateZip(zipPath);
+    if (!chk.ok) {
+      console.warn('ZIP 校验失败:', chk.error);
+      console.warn('请直接拷贝 win-unpacked 目录，勿依赖损坏的 zip');
     }
+  } catch (e) {
+    console.warn('ZIP 压缩失败，仍可直接拷贝 win-unpacked 目录:', e.message);
   }
 
   copyDir(path.join(root, 'config'), path.join(outDir, 'config-sample'));
@@ -262,15 +255,18 @@ function main() {
   const guide = `# AIHelper Agent 离线部署指南 (v${ver})
 
 ## 推荐方式（绿色版，无需安装）
-1. 解压 ${zipName}
-   或直接复制 win-unpacked 整个文件夹
-2. 运行 "AIHelper Agent.exe"
-3. 打开「配置」设置本地模型或内网 API
+1. 优先：直接复制整个 win-unpacked 文件夹（最稳，无需解压）
+2. 或解压 ${zipName}
+   - 推荐 7-Zip / Windows「全部提取」
+   - 若提示「头部错误」：改用 7-Zip，或放弃 zip 改拷 win-unpacked
+   - 不要把 .exe 安装包当 zip 解压
+3. 运行 "AIHelper Agent.exe"
+4. 打开「配置」设置本地模型或内网 API
 
 也可用: 启动绿色版.bat
 
 ## 若存在安装包
-- AIHelper Agent-*-x64.exe  NSIS 安装程序
+- AIHelper Agent-*-x64.exe  NSIS 安装程序（双击安装，不是 zip）
 - AIHelper Agent-*-portable.exe  便携单文件
 
 ## 目标机要求
