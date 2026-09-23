@@ -6,6 +6,14 @@
 
 ---
 
+## [1.6.9] — 2026-09-23
+
+### 浏览器内部模块拆分（行为不变）
+- `browser.js` 改为薄入口，实现迁至 `src/tools/browser/*`
+- 子模块单向依赖 + `ctx` 注入，禁止 click/download/flow/launch 互 require，降低升级牵连
+- `npm test` 增加 `check-browser-split`：导出工具名与 definitions 对齐、依赖方向检查
+- 对外 API 不变：`createBrowserTools` / `resolveScreenshotDir`；registry、mail 路径不变
+
 ## [1.6.8] — 2026-09-23
 
 ### 文档对齐 + 无行为加固（不影响功能/性能）

@@ -1,6 +1,6 @@
 {
   "name": "aihelper-agent",
-  "version": "1.6.8",
+  "version": "1.6.9",
   "description": "离线可用的 AI Agent：本地/API 模型、文件与网页自动化",
   "main": "electron/main.js",
   "author": "AI Helper",
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "node scripts/test-guardrails.js",
+    "test": "node scripts/test-guardrails.js && node scripts/check-browser-split.js",
     "postinstall": "node scripts/ensure-playwright.js",
     "build": "electron-builder --win",
     "build:dir": "node scripts/build-offline.js --dir-only",
