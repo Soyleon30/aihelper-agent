@@ -71,7 +71,7 @@
       "dir": "",
       "skipIfExists": true,
       "dedupeByHash": true,
-      "timeoutMs": 60000
+      "timeoutMs": 30000
     },
     "mail": {
       "enabled": true,
@@ -99,7 +99,7 @@
       "noSandbox": false,
       "keepSession": true,
       "downloadDir": "",
-      "downloadWaitMs": 20000,
+      "downloadWaitMs": 12000,
       "screenshotDir": ""
     }
   },

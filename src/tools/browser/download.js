@@ -25,7 +25,7 @@ function createDownloadHelpers(ctx) {
   function defaultDlWaitMs() {
     const n = Number(cfg.downloadWaitMs);
     if (Number.isFinite(n) && n > 0) return Math.max(800, n);
-    return 20000;
+    return 12000;
   }
 
   function incomingDir(dlRoot) {
@@ -114,18 +114,10 @@ function createDownloadHelpers(ctx) {
         return;
       }
 
-      let artifactPath = '';
-      try {
-        // 仅在需要落盘时再等 path（skip 路径已 return，避免白等大文件下完）
-        artifactPath = (await download.path()) || '';
-      } catch (_) {
-        artifactPath = '';
-      }
-
       try {
         const dest = target.path;
         ensureDir(path.dirname(dest));
-        // saveAs 前再查一次，防并发双写
+        // saveAs 前再查一次，防并发双写（不先 await path()，避免大文件白等整包下完）
         const again = resolveSaveTarget({
           path: dest,
           defaultDir: path.dirname(dest),
@@ -137,7 +129,6 @@ function createDownloadHelpers(ctx) {
           try {
             await download.cancel();
           } catch (_) {}
-          safeUnlink(fsSync, artifactPath);
           const rec = {
             ok: true,
             skipped: true,
@@ -158,10 +149,7 @@ function createDownloadHelpers(ctx) {
         }
         const finalDest = again.path || dest;
         await download.saveAs(finalDest);
-        if (artifactPath && path.resolve(artifactPath) !== path.resolve(finalDest)) {
-          safeUnlink(fsSync, artifactPath);
-        }
-        // 清理 staging 里 UUID 碎片
+        // 清理 staging 碎片（不阻塞主路径）
         try {
           for (const name of fsSync.readdirSync(stageRoot)) {
             if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(name)) {
@@ -188,7 +176,17 @@ function createDownloadHelpers(ctx) {
         bs.pushDownloadRecord(rec);
         bs.logAction('browser.download', rec);
       } catch (err) {
+        // 失败时再尝试 path() 抢救 staging 文件（短超时心态：path 可能已就绪）
         let recovered = '';
+        let artifactPath = '';
+        try {
+          artifactPath = (await Promise.race([
+            download.path().catch(() => ''),
+            new Promise((r) => setTimeout(() => r(''), 1500))
+          ])) || '';
+        } catch (_) {
+          artifactPath = '';
+        }
         try {
           if (artifactPath && fsSync.existsSync(artifactPath)) {
             const t2 = resolveSaveTarget({
@@ -588,7 +586,7 @@ function createDownloadHelpers(ctx) {
         return { ok: false, error: '需要 selector 或 text' };
       }
 
-      // 竞速：download 记录 vs 网络 URL（每 150ms 看一次），避免干等满超时
+      // 竞速：download 记录 vs 网络 URL（每 100ms），有 URL 后最多再等 400ms 给 blob 事件
       const t0 = Date.now();
       let waited = null;
       let waiterDone = false;
@@ -596,22 +594,23 @@ function createDownloadHelpers(ctx) {
         waiterDone = true;
         waited = r;
       });
+      let netSeenAt = 0;
 
       while (Date.now() - t0 < timeoutMs) {
         if (waiterDone) break;
         if (netUrl && /^https?:\/\//i.test(netUrl)) {
-          // 给 download 事件一点余量（blob 可能稍晚）
-          if (Date.now() - t0 >= 1200) break;
+          if (!netSeenAt) netSeenAt = Date.now();
+          if (Date.now() - netSeenAt >= 400) break;
         }
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 100));
       }
       if (!waiterDone) {
         waited = await Promise.race([
           waiterPromise,
-          new Promise((r) => setTimeout(() => r(null), 200))
+          new Promise((r) => setTimeout(() => r(null), 150))
         ]);
-      } else {
-        waited = waited || (await waiterPromise);
+      } else if (waited == null) {
+        waited = await waiterPromise;
       }
 
       if (waited && waited.ok && waited.path) {
@@ -727,7 +726,7 @@ function createDownloadHelpers(ctx) {
     }
     const res = await context.request.get(fileUrl, {
       headers,
-      timeout: opts.timeoutMs || cfg.timeoutMs || 120000,
+      timeout: opts.timeoutMs || cfg.timeoutMs || 20000,
       maxRedirects: 10,
       failOnStatusCode: false
     });
@@ -773,7 +772,7 @@ function createDownloadHelpers(ctx) {
   }
   
   async function fetchBytesNode(fileUrl, opts = {}) {
-    const timeoutMs = opts.timeoutMs || cfg.timeoutMs || 120000;
+    const timeoutMs = opts.timeoutMs || cfg.timeoutMs || 20000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -817,7 +816,7 @@ function createDownloadHelpers(ctx) {
     // 浏览器直接打开资源 URL（图片/pdf 等），取导航响应体——最接近「地址栏打开再保存」
     const page = bs.getShared().page;
     if (!page || page.isClosed()) throw new Error('无 page');
-    const timeout = opts.timeoutMs || cfg.timeoutMs || 60000;
+    const timeout = opts.timeoutMs || cfg.timeoutMs || 20000;
     const res = await page.goto(fileUrl, {
       waitUntil: 'commit',
       timeout
@@ -841,10 +840,10 @@ function createDownloadHelpers(ctx) {
     const errors = [];
     let got = null;
     let via = '';
-    // 单路径短超时，避免 4 路串行各等 120s
+    // 单路径短超时，避免 4 路串行空等
     const perTry = Math.min(
-      Math.max(5000, Number(opts.timeoutMs) || cfg.timeoutMs || 45000),
-      45000
+      Math.max(3000, Number(opts.timeoutMs) || cfg.timeoutMs || 15000),
+      20000
     );
     const tryOpts = { ...opts, timeoutMs: perTry };
 

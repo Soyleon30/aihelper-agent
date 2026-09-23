@@ -150,9 +150,9 @@ function pushDownloadRecord(rec) {
   }
 }
 
-function waitNextDownload(timeoutMs = 20000) {
+function waitNextDownload(timeoutMs = 12000) {
   return new Promise((resolve, reject) => {
-    const ms = Math.max(800, Number(timeoutMs) || 20000);
+    const ms = Math.max(800, Number(timeoutMs) || 12000);
     const timer = setTimeout(() => {
       shared.downloadWaiters = (shared.downloadWaiters || []).filter((x) => x !== entry);
       reject(new Error(`等待下载超时（${ms}ms）`));

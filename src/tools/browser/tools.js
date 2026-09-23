@@ -43,7 +43,7 @@ function createBrowserToolHandlers(ctx) {
           looksLikeFileUrl(target) ||
           /\.(zip|tar|tgz|gz|xlsx?|pdf|rar|7z)(\?|$)/i.test(target);
         if (mayDownload) {
-          const navDlWait = args.timeoutMs || cfg.downloadWaitMs || 20000;
+          const navDlWait = args.timeoutMs || cfg.downloadWaitMs || 12000;
           bs.setPendingDownloadSave({
             skipIfExists: args.skipIfExists !== false,
             force: args.force === true,
@@ -104,7 +104,7 @@ function createBrowserToolHandlers(ctx) {
         const dlTimeout =
           args.downloadTimeoutMs ||
           cfg.downloadWaitMs ||
-          20000;
+          12000;
         let dlPromise = null;
         if (waitDl) {
           bs.setPendingDownloadSave({
@@ -145,7 +145,7 @@ function createBrowserToolHandlers(ctx) {
     async browser_wait_download(args) {
       return withStep('browser_wait_download', args, async () => {
         await ensurePage();
-        const timeoutMs = args.timeoutMs || cfg.downloadWaitMs || 20000;
+        const timeoutMs = args.timeoutMs || cfg.downloadWaitMs || 12000;
         try {
           const rec = await bs.waitNextDownload(timeoutMs);
           return { ok: !!rec.ok, ...rec, downloadDir: bs.getShared().downloadDir || '' };
@@ -241,7 +241,7 @@ function createBrowserToolHandlers(ctx) {
           selector: a.selector,
           text: a.text,
           ...saveOpts,
-          timeoutMs: a.timeoutMs || cfg.downloadWaitMs || 20000
+          timeoutMs: a.timeoutMs || cfg.downloadWaitMs || 12000
         });
   
         if (cap.saved && cap.saved.ok) {
