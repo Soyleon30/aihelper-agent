@@ -22,9 +22,9 @@ const DEFAULT_SELECTORS = {
   /** 读信区主题 */
   readSubject:
     '.read-subject, .mail-read-subject, h1.subject, [class*="read"] [class*="subject"], .subject-text',
-  /** 读信区正文 */
+  /** 读信区正文（Coremail: .mail-content > iframe > body > p；收发件人 #rc_from） */
   readBody:
-    '.mail-content, .read-content, #mailContent, .content-body, [class*="mail-body"], [class*="msg-content"], iframe',
+    '.mail-content, .read-content, #mailContent, .content-body, [class*="mail-body"], [class*="msg-content"], .mail-content iframe, iframe',
   /** 搜索框 */
   searchInput:
     'input[type="search"], input[name*="search"], input[placeholder*="搜索"], input[placeholder*="search"], #searchInput',
@@ -488,7 +488,9 @@ function createMailTools(options = {}) {
         subject: content.subject,
         url: content.url,
         bodySource: content.bodySource,
-        frameCount: content.frameCount
+        frameCount: content.frameCount,
+        textLen: (content.text || '').length,
+        paragraphs: content.paragraphs
       });
       return {
         ok: true,
@@ -496,11 +498,15 @@ function createMailTools(options = {}) {
         id: id || undefined,
         index: index || undefined,
         subject: content.subject,
+        from: content.from,
+        to: content.to,
         text: content.text,
+        paragraphs: content.paragraphs,
         url: content.url,
         bodySource: content.bodySource,
         frameCount: content.frameCount,
-        message: '正文来自本机 Coremail 界面（含 iframe，只读，未使用 IMAP/POP3）'
+        message:
+          '正文来自 Coremail 读信区（.mail-content 内 iframe 的 p 段；收发件人 #rc_from）。只读，未使用 IMAP/POP3'
       };
     }
   };

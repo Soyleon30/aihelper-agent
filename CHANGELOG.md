@@ -6,6 +6,13 @@
 
 ---
 
+## [1.6.15] — 2026-09-23
+
+### Coremail 正文：mail-content 内 iframe 的 p 段
+- 根因：命中 `.mail-content` 后只读外壳文字就 break，未进入内部 iframe
+- `collectMailBody`：容器优先子 iframe → 抽取 body 内 `p` 段；`#rc_from` / blockquote 解析收发件人
+- `mail_read` 返回 `from` / `to` / `paragraphs` / `text`（真正文）
+
 ## [1.6.14] — 2026-09-23
 
 ### 浏览器/邮件读正文含 iframe

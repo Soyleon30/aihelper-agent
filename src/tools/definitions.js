@@ -224,7 +224,7 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'mail_read',
       description:
-        '在 Coremail 界面打开并读取一封邮件正文。用 mail_list 的 index 或 id。只读不发送。',
+        '打开并读取 Coremail 邮件：正文取 .mail-content 内 iframe 的 p 段，收发件人取 #rc_from。返回 subject/from/to/text。用 mail_list 的 index 或 id。只读不发送。',
       parameters: {
         type: 'object',
         properties: {
