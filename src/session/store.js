@@ -1,5 +1,6 @@
 /**
- * 对话会话持久化：多轮 history 落盘，定时/即时保存，关闭后可恢复。
+ * 对话会话持久化：多轮 history 落盘，关闭后可恢复。
+ * 自动保存由渲染进程按间隔调用 saveSession；本模块只负责读写文件。
  */
 const fs = require('fs');
 const path = require('path');
@@ -16,8 +17,6 @@ function createSessionStore(options = {}) {
     ...(options.config || {})
   };
 
-  let timer = null;
-  let dirty = false;
   let currentId = null;
 
   function baseDir() {
@@ -56,20 +55,6 @@ function createSessionStore(options = {}) {
   function configure(next) {
     cfg = { ...cfg, ...(next || {}) };
     if (cfg.dir) cfg.dir = String(cfg.dir).trim();
-    schedule();
-  }
-
-  function schedule() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-    if (!cfg.enabled) return;
-    const ms = Math.max(5000, cfg.autosaveMs || 15000);
-    timer = setInterval(() => {
-      if (dirty) flushSync();
-    }, ms);
-    if (timer.unref) timer.unref();
   }
 
   function createSession(meta = {}) {
@@ -97,7 +82,6 @@ function createSessionStore(options = {}) {
     pruneIndex(idx);
     writeIndex(idx);
     currentId = id;
-    dirty = false;
     return sess;
   }
 
@@ -123,7 +107,6 @@ function createSessionStore(options = {}) {
       const idx = readIndex();
       idx.currentId = sess.id;
       writeIndex(idx);
-      dirty = false;
       return sess;
     } catch {
       return null;
@@ -184,23 +167,13 @@ function createSessionStore(options = {}) {
       pruneIndex(idx);
       writeIndex(idx);
       currentId = sess.id;
-      dirty = false;
       return { ok: true, path: sessionPath(sess.id), updatedAt: sess.updatedAt };
     } catch (err) {
       return { ok: false, error: err.message || String(err) };
     }
   }
 
-  function markDirty() {
-    dirty = true;
-  }
-
-  function flushSync() {
-    // 由外部传入当前会话内容；此处仅作 no-op 占位
-    dirty = false;
-  }
-
-  /** 导出可读文本 */
+  /** 导出可读文本（供外部脚本/调试；UI 当前用 saveSession 落盘） */
   function exportText(sess) {
     if (!sess) return '';
     const lines = [`# ${sess.title || sess.id}`, `更新: ${sess.updatedAt || ''}`, ''];
@@ -229,14 +202,7 @@ function createSessionStore(options = {}) {
     return baseDir();
   }
 
-  function shutdown() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-  }
-
-  schedule();
+  function shutdown() {}
 
   return {
     configure,
@@ -245,7 +211,6 @@ function createSessionStore(options = {}) {
     getCurrent,
     listSessions,
     saveSession,
-    markDirty,
     deleteSession,
     exportText,
     getDir,

@@ -98,9 +98,13 @@ npm run pack:offline    # → offline-cache/
 
 - **文件**: `list_dir` `read_file` `write_file` `append_file` `delete_path`
 - **HTTP**: `http_request`
-- **浏览器**: `browser_navigate` `browser_click` `browser_type` `browser_fill_form` `browser_get_text` `browser_get_html` `browser_screenshot` `browser_wait` `browser_evaluate` `browser_close`
+- **下载**: `download_file` `download_from_markdown` `list_downloads` `get_download_dir`
+- **邮件（Coremail 只读）**: `mail_test` `mail_launch_client` `mail_list_folders` `mail_list` `mail_search` `mail_read`
+- **浏览器**: `browser_state` `browser_navigate` `browser_click` `browser_type` `browser_fill_form` `browser_get_text` `browser_get_html` `browser_screenshot` `get_screenshot_dir` `browser_wait` `browser_evaluate` `browser_close`
+- **浏览器下载**: `browser_resolve_download_url` `browser_download` `browser_wait_download` `browser_list_downloads`
+- **录制回放**: `browser_record_start` `browser_record_stop` `browser_record_status` `browser_flow_list` `browser_flow_run`
 
-可在配置中关闭某类工具，或限制文件允许根目录。
+可在配置中关闭某类工具，或限制文件允许根目录。完整参数见应用内「工具说明」与 `src/tools/definitions.js`。
 
 ## 示例任务
 

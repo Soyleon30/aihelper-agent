@@ -418,23 +418,43 @@
               <li><code>list_dir</code> 列目录</li>
               <li><code>read_file</code> / <code>write_file</code> / <code>append_file</code></li>
               <li><code>delete_path</code> 删除文件或空目录</li>
+              <li>可在配置中设置 <code>allowedRoots</code> 限制可访问根目录</li>
             </ul>
           </div>
           <div class="card">
             <h2>HTTP</h2>
             <ul class="list">
-              <li><code>http_request</code> 支持 GET/POST/PUT/DELETE，JSON / 表单 body</li>
-              <li>适合调用内网 API、提交表单、webhook</li>
+              <li><code>http_request</code> 支持 GET/POST/PUT/DELETE/PATCH，JSON / 表单 body</li>
+              <li>适合调用内网 API、提交表单、webhook；大文件请用下载工具</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h2>下载</h2>
+            <ul class="list">
+              <li><code>download_file</code> 按 URL 落盘（可传 path/dir/filename；同名默认跳过）</li>
+              <li><code>download_from_markdown</code> 从 md 文本/文件批量抽链下载</li>
+              <li><code>list_downloads</code> / <code>get_download_dir</code></li>
+            </ul>
+          </div>
+          <div class="card">
+            <h2>邮件（Coremail 只读）</h2>
+            <ul class="list">
+              <li><code>mail_test</code> / <code>mail_launch_client</code> / <code>mail_list_folders</code></li>
+              <li><code>mail_list</code> / <code>mail_search</code> / <code>mail_read</code></li>
+              <li>本机客户端或已登录网页；非 IMAP/POP3；不支持发送/删除</li>
             </ul>
           </div>
           <div class="card">
             <h2>浏览器</h2>
             <ul class="list">
+              <li><code>browser_state</code> 当前会话 URL/标题/近期下载（继续任务先看状态）</li>
               <li><code>browser_navigate</code> 打开网页</li>
-              <li><code>browser_click</code> / <code>browser_type</code> / <code>browser_fill_form</code> 登录与填写（点击自动可见优先+force/JS 回退）</li>
-              <li><code>browser_record_start/stop</code> 人工操作录制；<code>browser_flow_run</code> 变量化回放</li>
-              <li><code>browser_get_text</code> / <code>browser_screenshot</code> 读取与截图</li>
-              <li>优先自带 Chromium / 旁路 browsers；也可用本机 Chrome/Edge</li>
+              <li><code>browser_click</code> / <code>browser_type</code> / <code>browser_fill_form</code>（点击可见优先 + force/JS 回退）</li>
+              <li><code>browser_get_text</code> / <code>browser_get_html</code> / <code>browser_screenshot</code> / <code>get_screenshot_dir</code></li>
+              <li><code>browser_wait</code> / <code>browser_evaluate</code> / <code>browser_close</code></li>
+              <li>下载：<code>browser_resolve_download_url</code> / <code>browser_download</code> / <code>browser_wait_download</code> / <code>browser_list_downloads</code></li>
+              <li>录制：<code>browser_record_start/stop/status</code>；回放 <code>browser_flow_list</code> / <code>browser_flow_run</code>（vars 替换 <code>{{变量}}</code>）</li>
+              <li>默认可见窗口 + 优先本机 Chrome/Edge；可持久登录配置档</li>
             </ul>
           </div>
           <div class="card">

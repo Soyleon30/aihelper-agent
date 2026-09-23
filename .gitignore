@@ -12,3 +12,13 @@ playwright-report/
 test-results/
 *.exe
 *.blockmap
+*.zip
+.asar
+coverage/
+.env
+.env.*
+!.env.example
+config.local.json
+**/userData/
+*.pem
+*.key
