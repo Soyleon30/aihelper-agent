@@ -97,9 +97,19 @@ function ensureUserConfig() {
         changed = true;
       }
       if (cur.tools?.browser && def.tools?.browser) {
-        if (cur.tools.browser.keepSession === undefined) {
-          cur.tools.browser.keepSession = def.tools.browser.keepSession;
-          changed = true;
+        for (const k of ['keepSession', 'downloadWaitMs', 'downloadDir', 'screenshotDir']) {
+          if (cur.tools.browser[k] === undefined && def.tools.browser[k] !== undefined) {
+            cur.tools.browser[k] = def.tools.browser[k];
+            changed = true;
+          }
+        }
+      }
+      if (cur.tools?.download && def.tools?.download) {
+        for (const k of ['skipIfExists', 'dedupeByHash', 'timeoutMs', 'dir']) {
+          if (cur.tools.download[k] === undefined && def.tools.download[k] !== undefined) {
+            cur.tools.download[k] = def.tools.download[k];
+            changed = true;
+          }
         }
       }
       if (changed) {
