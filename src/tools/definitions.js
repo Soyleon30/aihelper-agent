@@ -281,7 +281,7 @@ const TOOL_DEFINITIONS = [
             type: 'boolean',
             description: 'true=等待本次点击触发的下载完成并返回 path'
           },
-          downloadTimeoutMs: { type: 'number', description: '等下载超时，默认 60000' },
+          downloadTimeoutMs: { type: 'number', description: '等下载超时，默认 20000' },
           filename: { type: 'string', description: 'waitDownload 时可选保存名' },
           path: { type: 'string', description: 'waitDownload 时可选完整保存路径' },
           dir: { type: 'string', description: 'waitDownload 时可选保存目录' },
@@ -302,7 +302,7 @@ const TOOL_DEFINITIONS = [
       parameters: {
         type: 'object',
         properties: {
-          timeoutMs: { type: 'number', description: '超时毫秒，默认 60000' }
+          timeoutMs: { type: 'number', description: '超时毫秒，默认 20000' }
         }
       }
     }

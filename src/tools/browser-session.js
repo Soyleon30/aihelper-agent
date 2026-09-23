@@ -150,9 +150,9 @@ function pushDownloadRecord(rec) {
   }
 }
 
-function waitNextDownload(timeoutMs = 60000) {
+function waitNextDownload(timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
-    const ms = Math.max(1000, Number(timeoutMs) || 60000);
+    const ms = Math.max(800, Number(timeoutMs) || 20000);
     const timer = setTimeout(() => {
       shared.downloadWaiters = (shared.downloadWaiters || []).filter((x) => x !== entry);
       reject(new Error(`等待下载超时（${ms}ms）`));
@@ -162,7 +162,10 @@ function waitNextDownload(timeoutMs = 60000) {
         clearTimeout(timer);
         resolve(rec);
       },
-      reject
+      reject: (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
     };
     if (!Array.isArray(shared.downloadWaiters)) shared.downloadWaiters = [];
     shared.downloadWaiters.push(entry);

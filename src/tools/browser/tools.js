@@ -43,11 +43,19 @@ function createBrowserToolHandlers(ctx) {
           looksLikeFileUrl(target) ||
           /\.(zip|tar|tgz|gz|xlsx?|pdf|rar|7z)(\?|$)/i.test(target);
         if (mayDownload) {
-          const waiter = bs.waitNextDownload(args.timeoutMs || cfg.timeoutMs || 60000);
+          const navDlWait = args.timeoutMs || cfg.downloadWaitMs || 20000;
+          bs.setPendingDownloadSave({
+            skipIfExists: args.skipIfExists !== false,
+            force: args.force === true,
+            filename: args.filename,
+            path: args.path,
+            dir: args.dir || args.saveDir
+          });
+          const waiter = bs.waitNextDownload(navDlWait);
           try {
             await p.goto(target, {
               waitUntil: 'commit',
-              timeout: args.timeoutMs || cfg.timeoutMs || 60000
+              timeout: Math.min(navDlWait + 5000, args.timeoutMs || cfg.timeoutMs || 30000)
             });
           } catch (err) {
             const msg = String(err && err.message ? err.message : err);
@@ -57,12 +65,14 @@ function createBrowserToolHandlers(ctx) {
           }
           try {
             const rec = await waiter;
-            if (rec && rec.ok) {
+            if (rec && (rec.ok || rec.skipped) && rec.path) {
               return {
                 ok: true,
                 navigatedAsDownload: true,
                 ...rec,
-                message: `URL 触发下载，已保存: ${rec.path}`
+                message: rec.skipped
+                  ? rec.message || `已存在，跳过: ${rec.path}`
+                  : `URL 触发下载，已保存: ${rec.path}`
               };
             }
           } catch (_) {}
@@ -91,7 +101,10 @@ function createBrowserToolHandlers(ctx) {
       return withStep('browser_click', args, async () => {
         const p = await ensurePage();
         const waitDl = args.waitDownload === true;
-        const dlTimeout = args.downloadTimeoutMs || 60000;
+        const dlTimeout =
+          args.downloadTimeoutMs ||
+          cfg.downloadWaitMs ||
+          20000;
         let dlPromise = null;
         if (waitDl) {
           bs.setPendingDownloadSave({
@@ -132,7 +145,7 @@ function createBrowserToolHandlers(ctx) {
     async browser_wait_download(args) {
       return withStep('browser_wait_download', args, async () => {
         await ensurePage();
-        const timeoutMs = args.timeoutMs || 60000;
+        const timeoutMs = args.timeoutMs || cfg.downloadWaitMs || 20000;
         try {
           const rec = await bs.waitNextDownload(timeoutMs);
           return { ok: !!rec.ok, ...rec, downloadDir: bs.getShared().downloadDir || '' };
@@ -228,7 +241,7 @@ function createBrowserToolHandlers(ctx) {
           selector: a.selector,
           text: a.text,
           ...saveOpts,
-          timeoutMs: a.timeoutMs || 60000
+          timeoutMs: a.timeoutMs || cfg.downloadWaitMs || 20000
         });
   
         if (cap.saved && cap.saved.ok) {

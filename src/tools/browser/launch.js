@@ -5,7 +5,7 @@
  */
 const path = require('path');
 const bs = require('../browser-session');
-const { ensureDir } = require('../download-path');
+const { ensureDir, resolveIncomingDir } = require('../download-path');
 const { resolveBrowserDownloadDir } = require('./paths');
 const { stealthEnabled, buildLaunchArgs, stealthInitScript } = require('./stealth');
 
@@ -228,19 +228,21 @@ function createLaunchHelpers(ctx) {
     const headless = cfg.headless === true;
   
     const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
+    const stageRoot = resolveIncomingDir(dlRoot);
     try {
       ensureDir(dlRoot);
+      ensureDir(stageRoot);
     } catch (_) {}
     shared.downloadDir = dlRoot;
     if (!Array.isArray(shared.recentDownloads)) shared.recentDownloads = [];
     if (!Array.isArray(shared.downloadWaiters)) shared.downloadWaiters = [];
   
-    // downloadsPath 必须在 launch / launchPersistentContext 上（写在 newContext 无效 → 会落到 %TEMP%/playwright-artifacts）
+    // downloadsPath / CDP 必须用 staging，禁止直接写最终目录（否则同名文件被浏览器原生覆盖）
     const launchOpts = {
       headless,
       args: buildLaunchArgs(cfg),
       ignoreDefaultArgs: stealthEnabled(cfg) ? ['--enable-automation'] : undefined,
-      downloadsPath: dlRoot
+      downloadsPath: stageRoot
     };
   
     const preferSystem = cfg.preferSystemBrowser !== false;

@@ -154,14 +154,34 @@ function pickDownloadFilename(opts = {}) {
   return candidates[0].name;
 }
 
+/** Windows 下大小写不敏感的存在判断；返回实际路径（保留已有文件的真实大小写） */
+function existingPath(p) {
+  const want = path.resolve(String(p || ''));
+  if (!want) return null;
+  try {
+    if (fs.existsSync(want)) return want;
+  } catch (_) {}
+  if (process.platform !== 'win32') return null;
+  try {
+    const dir = path.dirname(want);
+    const base = path.basename(want);
+    if (!fs.existsSync(dir)) return null;
+    const hit = fs.readdirSync(dir).find((n) => n.toLowerCase() === base.toLowerCase());
+    if (!hit) return null;
+    return path.join(dir, hit);
+  } catch (_) {
+    return null;
+  }
+}
+
 function uniquePath(dir, base) {
   let p = path.join(dir, base);
-  if (!fs.existsSync(p)) return p;
+  if (!existingPath(p)) return p;
   const ext = path.extname(base);
   const stem = path.basename(base, ext);
   for (let i = 1; i < 1000; i++) {
     p = path.join(dir, `${stem}(${i})${ext}`);
-    if (!fs.existsSync(p)) return p;
+    if (!existingPath(p)) return p;
   }
   return path.join(dir, `${stem}_${Date.now()}${ext}`);
 }
@@ -171,10 +191,17 @@ function ensureDir(dir) {
   return dir;
 }
 
+/** 浏览器原生下载 staging 目录（避免 CDP 直接覆盖最终同名文件） */
+function resolveIncomingDir(downloadRoot) {
+  const root = path.resolve(String(downloadRoot || ''));
+  return path.join(root, '.aihelper-incoming');
+}
+
 /**
  * 解析保存目标：支持 path / dir+filename / 默认下载目录。
  * skipIfExists=true 且同名已存在 → skipped；否则 uniquePath 避让。
  * force=true 覆盖同名（仍写原路径，不改名）。
+ * 空文件（size=0）不视为有效同名，允许重下覆盖空壳。
  */
 function resolveSaveTarget(opts = {}) {
   const defaultRoot = resolveDownloadRoot(opts.defaultDir || '', opts.userDataPath);
@@ -213,33 +240,39 @@ function resolveSaveTarget(opts = {}) {
   let dest = path.join(dir, base);
   const force = opts.force === true;
   const skipIfExists = opts.skipIfExists !== false;
+  const existed = existingPath(dest);
 
-  if (!force && fs.existsSync(dest)) {
+  if (!force && existed) {
     let size = 0;
     try {
-      size = fs.statSync(dest).size;
+      size = fs.statSync(existed).size;
     } catch (_) {}
-    if (skipIfExists) {
-      return {
-        ok: true,
-        skipped: true,
-        reason: 'file_exists',
-        dir,
-        filename: base,
-        path: dest,
-        size,
-        message: '目标文件已存在，跳过下载',
-        explicitPath
-      };
+    // 0 字节空壳：不跳过，直接覆盖写
+    if (size > 0) {
+      if (skipIfExists) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: 'file_exists',
+          dir: path.dirname(existed),
+          filename: path.basename(existed),
+          path: existed,
+          size,
+          message: '目标文件已存在，跳过下载',
+          explicitPath
+        };
+      }
+      // 不跳过：改名避让（force 才覆盖）
+      dest = uniquePath(dir, base);
+    } else {
+      dest = existed;
     }
-    // 不跳过：改名避让（force 才覆盖）
-    dest = uniquePath(dir, base);
   }
 
   return {
     ok: true,
     skipped: false,
-    dir,
+    dir: path.dirname(dest),
     filename: path.basename(dest),
     path: dest,
     explicitPath
@@ -253,7 +286,9 @@ module.exports = {
   pickDownloadFilename,
   filenameFromUrl,
   uniquePath,
+  existingPath,
   resolveSaveTarget,
+  resolveIncomingDir,
   ensureDir,
   hasCjk,
   looksLikeMojibake

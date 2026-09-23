@@ -6,6 +6,16 @@
 
 ---
 
+## [1.6.11] — 2026-09-23
+
+### 下载同名不再覆盖 + 缩短等待
+- CDP/`downloadsPath` 改为 `.aihelper-incoming` 暂存，最终再 `saveAs`（根因：浏览器原生直写最终目录会覆盖同名）
+- 同名：默认跳过；`skipIfExists=false` 改名 `file(1).ext`；`force=true` 才覆盖
+- Windows 大小写不敏感判重；空文件不视为有效同名
+- 恢复/改扩展名路径也走同名策略，禁止静默覆盖
+- 下载等待默认 **20s**（可配 `tools.browser.downloadWaitMs`）；download 事件与网络 URL 竞速
+- HTTP 补下：优先 context.request，单路最多 ~45s，goto 放最后
+
 ## [1.6.10] — 2026-09-23
 
 ### 离线 ZIP 解压「头部错误」
