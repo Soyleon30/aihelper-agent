@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const bs = require('./browser-session');
+const { collectMailBody } = require('./browser/page-text');
 
 const DEFAULT_SELECTORS = {
   /** 收件箱/邮件列表行（可多选，取第一个匹配） */
@@ -207,50 +208,35 @@ function createMailTools(options = {}) {
 
   async function scrapeRead(page, maxChars) {
     const sel = selectors();
-    return page.evaluate(
-      ({ readSubject, readBody, maxChars }) => {
-        function text(el) {
-          return (el && (el.innerText || el.textContent) || '').replace(/\s+/g, ' ').trim();
-        }
-        function first(css) {
-          for (const part of (css || '').split(',')) {
+    return collectMailBody(page, {
+      bodySelectors: sel.readBody,
+      subjectSelectors: sel.readSubject,
+      maxChars
+    });
+  }
+
+  async function waitForReadPane(page) {
+    try {
+      await page.waitForFunction(
+        () => {
+          const iframes = Array.from(document.querySelectorAll('iframe'));
+          for (const f of iframes) {
             try {
-              const el = document.querySelector(part.trim());
-              if (el) return el;
-            } catch (_) {}
-          }
-          return null;
-        }
-        let subject = text(first(readSubject));
-        let body = '';
-        const bodyEl = first(readBody);
-        if (bodyEl) {
-          if (bodyEl.tagName === 'IFRAME') {
-            try {
-              body = text(bodyEl.contentDocument && bodyEl.contentDocument.body);
+              const t = (f.contentDocument && f.contentDocument.body && f.contentDocument.body.innerText) || '';
+              if (String(t).trim().length > 20) return true;
             } catch (_) {
-              body = '';
+              if (f.src && String(f.src).length > 8) return true;
             }
-          } else {
-            body = text(bodyEl);
           }
-        }
-        if (!body) {
-          body = text(document.querySelector('body')).slice(0, maxChars);
-        }
-        if (body.length > maxChars) body = body.slice(0, maxChars) + '…';
-        return {
-          subject: subject || document.title || '(无主题)',
-          text: body,
-          url: location.href
-        };
-      },
-      {
-        readSubject: sel.readSubject,
-        readBody: sel.readBody,
-        maxChars
-      }
-    );
+          const body = (document.body && document.body.innerText) || '';
+          return body.length > 80;
+        },
+        { timeout: 5000 }
+      );
+    } catch (_) {}
+    try {
+      await page.waitForTimeout(400);
+    } catch (_) {}
   }
 
   function findClientExe() {
@@ -493,11 +479,17 @@ function createMailTools(options = {}) {
             `未找到邮件 id=${id || ''} index=${index || ''}。请先 mail_list 再读。`
           );
         }
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(800);
+        await waitForReadPane(page);
       }
 
       const content = await scrapeRead(page, maxChars);
-      log('mail.read', { subject: content.subject, url: content.url });
+      log('mail.read', {
+        subject: content.subject,
+        url: content.url,
+        bodySource: content.bodySource,
+        frameCount: content.frameCount
+      });
       return {
         ok: true,
         mode: 'client_ui',
@@ -506,7 +498,9 @@ function createMailTools(options = {}) {
         subject: content.subject,
         text: content.text,
         url: content.url,
-        message: '正文来自本机 Coremail 界面（只读，未使用 IMAP/POP3）'
+        bodySource: content.bodySource,
+        frameCount: content.frameCount,
+        message: '正文来自本机 Coremail 界面（含 iframe，只读，未使用 IMAP/POP3）'
       };
     }
   };

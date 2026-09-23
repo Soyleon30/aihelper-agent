@@ -221,9 +221,17 @@ async function getState() {
     const url = p.url();
     const title = await p.title().catch(() => '');
     let textPreview = '';
+    let frameCount = 1;
     try {
-      textPreview = (await p.locator('body').innerText({ timeout: 3000 })).slice(0, 500);
-    } catch (_) {}
+      const { collectPageText } = require('./browser/page-text');
+      const collected = await collectPageText(p, { maxChars: 500, includeFrames: true });
+      textPreview = (collected.text || '').slice(0, 500);
+      frameCount = collected.frameCount || 1;
+    } catch (_) {
+      try {
+        textPreview = (await p.locator('body').innerText({ timeout: 3000 })).slice(0, 500);
+      } catch (_) {}
+    }
     const name = browserMeta.browserName || '浏览器';
     return {
       open: true,
@@ -231,6 +239,7 @@ async function getState() {
       url,
       title,
       textPreview,
+      frameCount,
       launchedAt: shared.launchedAt,
       downloadDir: shared.downloadDir || '',
       userDataDir: shared.userDataDir || '',

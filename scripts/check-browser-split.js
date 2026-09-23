@@ -14,8 +14,13 @@ for (const f of files) {
   for (const r of reqs) {
     if (r === './paths' || r === './stealth' || r.startsWith('../')) continue;
     if (f === 'index.js') continue;
-    if (['./click', './download', './flow', './launch', './tools', './util'].includes(r)) {
-      bad.push(`${f}->${r}`);
+    if (
+      ['./click', './download', './flow', './launch', './tools', './util', './page-text'].includes(
+        r
+      )
+    ) {
+      // tools.js 可依赖 page-text；其它业务模块互引用仍算坏依赖
+      if (!(f === 'tools.js' && r === './page-text')) bad.push(`${f}->${r}`);
     }
   }
 }

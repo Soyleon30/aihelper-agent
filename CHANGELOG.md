@@ -6,6 +6,14 @@
 
 ---
 
+## [1.6.14] — 2026-09-23
+
+### 浏览器/邮件读正文含 iframe
+- `browser_get_text` / `browser_get_html` 默认合并主页面 + 全部子 iframe 文本（Coremail 正文常在 iframe）
+- 新增 `src/tools/browser/page-text.js`：`collectPageText` / `collectPageHtml` / `collectMailBody`
+- `mail_read` 用 Playwright frame 取最长 iframe 正文，点开后等待读信区
+- `browser_state` 的 textPreview 同样含 iframe 预览
+
 ## [1.6.13] — 2026-09-23
 
 ### 下载等待再缩短

@@ -276,10 +276,13 @@ const TOOL_DEFINITIONS = [
             description: '可见文本（与 selector 二选一）；须与用户要操作的按钮一致，勿用无关词'
           },
           timeoutMs: { type: 'number' },
-          force: { type: 'boolean', description: 'true=强制点击；false=禁用 force 回退' },
+          force: {
+            type: 'boolean',
+            description: '仅控制 Playwright 强制点击，不影响下载是否覆盖'
+          },
           waitDownload: {
             type: 'boolean',
-            description: 'true=等待本次点击触发的下载完成并返回 path'
+            description: 'true=等待本次点击触发的下载完成并返回 path（下完再落盘/改名）'
           },
           downloadTimeoutMs: { type: 'number', description: '等下载超时，默认 12000' },
           filename: { type: 'string', description: 'waitDownload 时可选保存名' },
@@ -287,7 +290,15 @@ const TOOL_DEFINITIONS = [
           dir: { type: 'string', description: 'waitDownload 时可选保存目录' },
           skipIfExists: {
             type: 'boolean',
-            description: 'waitDownload 时默认 true：同名已存在则跳过'
+            description: 'waitDownload 时默认 true：同名跳过；false 则改名 file(1).ext'
+          },
+          overwrite: {
+            type: 'boolean',
+            description: 'waitDownload 时 true=覆盖同名（与点击 force 无关）'
+          },
+          downloadForce: {
+            type: 'boolean',
+            description: '同 overwrite，显式强制覆盖下载文件'
           }
         }
       }
@@ -357,7 +368,8 @@ const TOOL_DEFINITIONS = [
             type: 'boolean',
             description: '默认 true：目标同名文件已存在则跳过'
           },
-          force: { type: 'boolean', description: 'true 则覆盖同名文件' },
+          force: { type: 'boolean', description: 'true 则覆盖同名文件（等同 overwrite）' },
+          overwrite: { type: 'boolean', description: 'true 则覆盖同名文件' },
           click: { type: 'boolean', description: '无 href 时是否点击解析，默认 true' },
           timeoutMs: { type: 'number' },
           fallbackPlaywright: {
@@ -478,11 +490,17 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'browser_get_text',
-      description: '获取页面或元素文本',
+      description:
+        '获取页面或元素文本。默认含所有 iframe（Coremail 等邮件正文常在 iframe）。selector 可选。',
       parameters: {
         type: 'object',
         properties: {
-          selector: { type: 'string', description: '可选，默认整页 body' }
+          selector: { type: 'string', description: '可选，主页面与 iframe 内都会尝试' },
+          maxChars: { type: 'number', description: '最大字符，默认 100000' },
+          includeFrames: {
+            type: 'boolean',
+            description: '是否读取子 iframe，默认 true'
+          }
         }
       }
     }
@@ -491,11 +509,13 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'browser_get_html',
-      description: '获取页面或元素 HTML',
+      description: '获取页面或元素 HTML（默认附带子 iframe 内容）',
       parameters: {
         type: 'object',
         properties: {
-          selector: { type: 'string' }
+          selector: { type: 'string' },
+          maxChars: { type: 'number' },
+          includeFrames: { type: 'boolean', description: '默认 true' }
         }
       }
     }

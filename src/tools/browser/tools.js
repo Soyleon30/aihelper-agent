@@ -5,6 +5,7 @@ const path = require('path');
 const fsp = require('fs').promises;
 const bs = require('../browser-session');
 const { resolveScreenshotDir, resolveBrowserDownloadDir } = require('./paths');
+const { collectPageText, collectPageHtml } = require('./page-text');
 
 function createBrowserToolHandlers(ctx) {
   const {
@@ -46,7 +47,8 @@ function createBrowserToolHandlers(ctx) {
           const navDlWait = args.timeoutMs || cfg.downloadWaitMs || 12000;
           bs.setPendingDownloadSave({
             skipIfExists: args.skipIfExists !== false,
-            force: args.force === true,
+            // 禁止把 navigate 的 force 当覆盖；仅 overwrite/downloadForce
+            overwrite: args.overwrite === true || args.downloadForce === true,
             filename: args.filename,
             path: args.path,
             dir: args.dir || args.saveDir
@@ -107,12 +109,13 @@ function createBrowserToolHandlers(ctx) {
           12000;
         let dlPromise = null;
         if (waitDl) {
+          // force 只给 Playwright 点击，绝不传给下载覆盖
           bs.setPendingDownloadSave({
             filename: args.filename,
             path: args.path,
             dir: args.dir || args.saveDir,
             skipIfExists: args.skipIfExists !== false,
-            force: args.force === true
+            overwrite: args.overwrite === true || args.downloadForce === true
           });
           dlPromise = bs.waitNextDownload(dlTimeout);
         }
@@ -210,7 +213,9 @@ function createBrowserToolHandlers(ctx) {
           path: a.path,
           dir: a.dir || a.saveDir,
           skipIfExists: a.skipIfExists !== false,
-          force: a.force === true,
+          // 仅 overwrite/downloadForce/force 显式覆盖；默认同名跳过或改名
+          overwrite:
+            a.overwrite === true || a.downloadForce === true || a.force === true,
           timeoutMs: a.timeoutMs,
           headers: a.headers
         };
@@ -479,24 +484,42 @@ function createBrowserToolHandlers(ctx) {
     async browser_get_text(args) {
       return withStep('browser_get_text', args, async () => {
         const p = await ensurePage();
-        if (args.selector) {
-          const text = await p.locator(args.selector).first().innerText();
-          return { text: text.slice(0, 100000), url: p.url() };
+        const maxChars = Math.min(Number(args.maxChars) || 100000, 200000);
+        const collected = await collectPageText(p, {
+          selector: args.selector,
+          maxChars,
+          includeFrames: args.includeFrames !== false
+        });
+        const out = {
+          text: collected.text,
+          url: p.url(),
+          frameCount: collected.frameCount,
+          includedFrames: collected.includedFrames
+        };
+        if (!args.selector) {
+          try {
+            out.title = await p.title();
+          } catch (_) {}
         }
-        const text = await p.locator('body').innerText();
-        return { text: text.slice(0, 100000), url: p.url(), title: await p.title() };
+        if (collected.truncated) out.truncated = true;
+        return out;
       });
     },
   
     async browser_get_html(args) {
       return withStep('browser_get_html', args, async () => {
         const p = await ensurePage();
-        if (args.selector) {
-          const html = await p.locator(args.selector).first().innerHTML();
-          return { html: html.slice(0, 200000), url: p.url() };
-        }
-        const html = await p.content();
-        return { html: html.slice(0, 200000), url: p.url() };
+        const maxChars = Math.min(Number(args.maxChars) || 200000, 500000);
+        const collected = await collectPageHtml(p, {
+          selector: args.selector,
+          maxChars,
+          includeFrames: args.includeFrames !== false
+        });
+        return {
+          html: collected.html,
+          url: p.url(),
+          frameCount: collected.frameCount
+        };
       });
     },
   
