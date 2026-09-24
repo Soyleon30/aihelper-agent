@@ -114,7 +114,10 @@ function createDownloadTools(options = {}) {
       const url = normalizeUrl(args.url);
       if (!url) throw new Error('需要 url');
       const root = ensureRoot();
-      const skipExisting = args.skipIfExists !== false && cfg.skipIfExists !== false;
+      // 默认改名；仅显式 true / 配置 true 才跳过
+      const skipExisting =
+        args.skipIfExists === true ||
+        (args.skipIfExists == null && cfg.skipIfExists === true);
       const force = args.force === true;
       const idx = readIndex();
 
@@ -300,7 +303,9 @@ function createDownloadTools(options = {}) {
         try {
           const r = await this.download_file({
             url,
-            skipIfExists: args.skipIfExists !== false,
+            skipIfExists:
+              args.skipIfExists === true ||
+              (args.skipIfExists == null && cfg.skipIfExists === true),
             force: args.force === true,
             timeoutMs: args.timeoutMs
           });

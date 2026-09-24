@@ -19,6 +19,7 @@ function createBrowserToolHandlers(ctx) {
     looksLikeFileUrl,
     resolveDownloadUrl,
     clickAndCaptureDownload,
+    waitDownloadSettled,
     httpDownloadToDir,
     flowsDir,
     suggestVariables,
@@ -46,14 +47,14 @@ function createBrowserToolHandlers(ctx) {
         if (mayDownload) {
           const navDlWait = args.timeoutMs || cfg.downloadWaitMs || 12000;
           bs.setPendingDownloadSave({
-            skipIfExists: args.skipIfExists !== false,
+            // 默认改名；仅显式 true 才跳过
+            skipIfExists: args.skipIfExists === true,
             // 禁止把 navigate 的 force 当覆盖；仅 overwrite/downloadForce
             overwrite: args.overwrite === true || args.downloadForce === true,
             filename: args.filename,
             path: args.path,
             dir: args.dir || args.saveDir
           });
-          const waiter = bs.waitNextDownload(navDlWait);
           try {
             await p.goto(target, {
               waitUntil: 'commit',
@@ -66,11 +67,23 @@ function createBrowserToolHandlers(ctx) {
             }
           }
           try {
-            const rec = await waiter;
+            const settled = await waitDownloadSettled({
+              timeoutMs: navDlWait,
+              pending: bs.peekPendingDownloadSave() || {
+                skipIfExists: args.skipIfExists === true,
+                overwrite: args.overwrite === true || args.downloadForce === true,
+                filename: args.filename,
+                path: args.path,
+                dir: args.dir || args.saveDir
+              },
+              preferredName: args.filename || ''
+            });
+            const rec = settled && settled.saved;
             if (rec && (rec.ok || rec.skipped) && rec.path) {
               return {
                 ok: true,
                 navigatedAsDownload: true,
+                detectVia: settled.via,
                 ...rec,
                 message: rec.skipped
                   ? rec.message || `已存在，跳过: ${rec.path}`
@@ -107,17 +120,17 @@ function createBrowserToolHandlers(ctx) {
           args.downloadTimeoutMs ||
           cfg.downloadWaitMs ||
           12000;
-        let dlPromise = null;
+        let pendingSave = null;
         if (waitDl) {
           // force 只给 Playwright 点击，绝不传给下载覆盖
-          bs.setPendingDownloadSave({
+          pendingSave = {
             filename: args.filename,
             path: args.path,
             dir: args.dir || args.saveDir,
-            skipIfExists: args.skipIfExists !== false,
+            skipIfExists: args.skipIfExists === true,
             overwrite: args.overwrite === true || args.downloadForce === true
-          });
-          dlPromise = bs.waitNextDownload(dlTimeout);
+          };
+          bs.setPendingDownloadSave(pendingSave);
         }
         const r = await robustClick(p, args);
         const out = {
@@ -127,11 +140,22 @@ function createBrowserToolHandlers(ctx) {
           url: p.url(),
           title: await p.title().catch(() => '')
         };
-        if (waitDl && dlPromise) {
-          try {
-            out.download = await dlPromise;
-          } catch (err) {
-            out.download = { ok: false, error: err.message || String(err) };
+        if (waitDl) {
+          const settled = await waitDownloadSettled({
+            timeoutMs: dlTimeout,
+            pending: pendingSave || bs.peekPendingDownloadSave() || {},
+            preferredName: (pendingSave && pendingSave.filename) || ''
+          });
+          if (settled && settled.ok && settled.saved) {
+            out.download = settled.saved;
+            out.downloadVia = settled.via;
+          } else {
+            out.download = {
+              ok: false,
+              error: (settled && settled.error) || '等待下载超时',
+              downloadDir: settled && settled.downloadDir,
+              stagingDir: settled && settled.stagingDir
+            };
           }
         }
         bs.logAction('page.click.agent', {
@@ -149,17 +173,39 @@ function createBrowserToolHandlers(ctx) {
       return withStep('browser_wait_download', args, async () => {
         await ensurePage();
         const timeoutMs = args.timeoutMs || cfg.downloadWaitMs || 12000;
-        try {
-          const rec = await bs.waitNextDownload(timeoutMs);
-          return { ok: !!rec.ok, ...rec, downloadDir: bs.getShared().downloadDir || '' };
-        } catch (err) {
+        const pending = {
+          filename: args.filename,
+          path: args.path,
+          dir: args.dir || args.saveDir,
+          skipIfExists: args.skipIfExists === true,
+          overwrite: args.overwrite === true || args.downloadForce === true
+        };
+        if (args.filename || args.path || args.dir) {
+          bs.setPendingDownloadSave(pending);
+        }
+        const settled = await waitDownloadSettled({
+          timeoutMs,
+          pending: bs.peekPendingDownloadSave() || pending,
+          preferredName: args.filename || ''
+        });
+        if (settled && settled.ok && settled.saved) {
           return {
-            ok: false,
-            error: err.message || String(err),
-            downloadDir: bs.getShared().downloadDir || '',
-            recentDownloads: (bs.getShared().recentDownloads || []).slice(-5)
+            ok: true,
+            ...settled.saved,
+            detectVia: settled.via,
+            downloadDir:
+              settled.saved.downloadDir || bs.getShared().downloadDir || ''
           };
         }
+        return {
+          ok: false,
+          error: (settled && settled.error) || '等待下载超时',
+          downloadDir: (settled && settled.downloadDir) || bs.getShared().downloadDir || '',
+          stagingDir: settled && settled.stagingDir,
+          recentDownloads:
+            (settled && settled.recentDownloads) ||
+            (bs.getShared().recentDownloads || []).slice(-5)
+        };
       });
     },
   
@@ -212,10 +258,10 @@ function createBrowserToolHandlers(ctx) {
           filename: a.filename,
           path: a.path,
           dir: a.dir || a.saveDir,
-          skipIfExists: a.skipIfExists !== false,
-          // 仅 overwrite/downloadForce/force 显式覆盖；默认同名跳过或改名
-          overwrite:
-            a.overwrite === true || a.downloadForce === true || a.force === true,
+          // 默认改名 file(1).ext；skipIfExists=true 才跳过；overwrite 才覆盖
+          skipIfExists: a.skipIfExists === true,
+          // 注意：a.force 是 Playwright 点击用，绝不当下载覆盖
+          overwrite: a.overwrite === true || a.downloadForce === true,
           timeoutMs: a.timeoutMs,
           headers: a.headers
         };

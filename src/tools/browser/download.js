@@ -40,6 +40,279 @@ function createDownloadHelpers(ctx) {
     } catch (_) {}
   }
 
+  /** 仅 overwrite/downloadForce/forceDownload 才覆盖；禁止把点击 force 当下载覆盖 */
+  function downloadOverwrite(pending) {
+    const p = pending || {};
+    return (
+      p.overwrite === true ||
+      p.downloadForce === true ||
+      p.forceDownload === true
+    );
+  }
+
+  /** 列 staging 成品（跳过未写完临时后缀） */
+  function listStageFiles(fsSync, stageRoot, sinceMs) {
+    let names = [];
+    try {
+      names = fsSync.readdirSync(stageRoot);
+    } catch (_) {
+      return [];
+    }
+    const out = [];
+    for (const name of names) {
+      if (!name || name.startsWith('.')) continue;
+      if (/\.(crdownload|tmp|partial|download)$/i.test(name)) continue;
+      const full = path.join(stageRoot, name);
+      let st;
+      try {
+        st = fsSync.statSync(full);
+      } catch (_) {
+        continue;
+      }
+      if (!st.isFile() || st.size <= 0) continue;
+      if (sinceMs && (st.mtimeMs || 0) < sinceMs - 500) continue;
+      out.push({ full, name, size: st.size, mtime: st.mtimeMs || 0 });
+    }
+    out.sort((a, b) => b.mtime - a.mtime);
+    return out;
+  }
+
+  /**
+   * 等下载完成：Playwright 记录 OR staging 文件大小稳定。
+   * 解决「文件已落盘却报等待超时」。
+   */
+  async function waitDownloadSettled(opts = {}) {
+    const fsSync = require('fs');
+    const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
+    const stageRoot = incomingDir(dlRoot);
+    const timeoutMs = Math.max(800, Number(opts.timeoutMs) || defaultDlWaitMs());
+    const pending = opts.pending || bs.peekPendingDownloadSave() || {};
+    const preferredName = opts.preferredName || pending.filename || '';
+    const t0 = Date.now();
+    const sinceMs = t0 - 2000;
+
+    const waiterPromise = bs.waitNextDownload(timeoutMs).catch((err) => ({
+      ok: false,
+      timeout: true,
+      error: err && err.message ? err.message : String(err)
+    }));
+
+    let waited = null;
+    let waiterDone = false;
+    waiterPromise.then((r) => {
+      waiterDone = true;
+      waited = r;
+    });
+
+    // size 连续两轮不变视为写完
+    const stable = new Map(); // full -> { size, hits }
+
+    while (Date.now() - t0 < timeoutMs) {
+      if (waiterDone && waited && (waited.ok || waited.skipped) && waited.path) {
+        return { ok: true, saved: waited, via: 'playwright-record' };
+      }
+
+      const files = listStageFiles(fsSync, stageRoot, sinceMs);
+      for (const f of files) {
+        const prev = stable.get(f.full);
+        if (prev && prev.size === f.size) {
+          prev.hits += 1;
+        } else {
+          stable.set(f.full, { size: f.size, hits: 1 });
+        }
+      }
+
+      const ready = files.find((f) => {
+        const s = stable.get(f.full);
+        return s && s.hits >= 2 && s.size > 0;
+      });
+      if (ready) {
+        // 若 Playwright 还在 saveAs，再给一点点时间；否则直接 promote
+        await new Promise((r) => setTimeout(r, 250));
+        if (waiterDone && waited && (waited.ok || waited.skipped) && waited.path) {
+          return { ok: true, saved: waited, via: 'playwright-record' };
+        }
+        // 文件可能已被 onDownload promote 走；再扫一次
+        if (!fsSync.existsSync(ready.full)) {
+          const recent = (bs.getShared().recentDownloads || []).slice(-3).reverse();
+          const hit = recent.find((r) => r && r.path && (r.ok || r.skipped));
+          if (hit) return { ok: true, saved: hit, via: 'recent-after-promote' };
+          continue;
+        }
+        const orphan = promoteOrphanStaging(
+          fsSync,
+          stageRoot,
+          dlRoot,
+          preferredName || ready.name,
+          pending
+        );
+        if (orphan && orphan.path) {
+          const rec = { ...orphan, at: new Date().toISOString() };
+          bs.pushDownloadRecord(rec);
+          bs.logAction(orphan.skipped ? 'browser.download.skip' : 'browser.download', rec);
+          return { ok: true, saved: rec, via: 'staging-stable' };
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    if (waiterDone && waited && (waited.ok || waited.skipped) && waited.path) {
+      return { ok: true, saved: waited, via: 'playwright-record-late' };
+    }
+
+    // 超时兜底：staging 里只要有成品就 promote，不再硬失败
+    const orphan = promoteOrphanStaging(
+      fsSync,
+      stageRoot,
+      dlRoot,
+      preferredName,
+      pending
+    );
+    if (orphan && orphan.path) {
+      const rec = { ...orphan, at: new Date().toISOString() };
+      bs.pushDownloadRecord(rec);
+      bs.logAction(orphan.skipped ? 'browser.download.skip' : 'browser.download', rec);
+      return { ok: true, saved: rec, via: 'staging-timeout-promote' };
+    }
+
+    const recent = (bs.getShared().recentDownloads || []).slice(-5).reverse();
+    const hit = recent.find(
+      (r) => r && r.path && (r.ok || r.skipped) && Date.parse(r.at || 0) >= sinceMs
+    );
+    if (hit) return { ok: true, saved: hit, via: 'recent-timeout' };
+
+    return {
+      ok: false,
+      error:
+        (waited && waited.error) ||
+        `等待下载超时（${timeoutMs}ms）：未捕获到 Playwright 下载，staging 也无成品`,
+      recentDownloads: recent,
+      downloadDir: dlRoot,
+      stagingDir: stageRoot
+    };
+  }
+
+  function planSaveTarget(pending, suggestedRaw, url, dlRoot) {
+    const p = pending || {};
+    // 默认改名避让；仅显式 skipIfExists=true 才跳过
+    const skip =
+      p.skipIfExists === true ||
+      (p.skipIfExists == null && cfg.skipIfExists === true);
+    return resolveSaveTarget({
+      path: p.path,
+      dir: p.dir || p.saveDir,
+      filename: p.filename,
+      suggested: suggestedRaw,
+      url,
+      defaultDir: dlRoot,
+      userDataPath,
+      skipIfExists: skip,
+      force: downloadOverwrite(p)
+    });
+  }
+
+  /** staging → 最终目录（同名改名/跳过已在 planSaveTarget 决定） */
+  function promoteStagedFile(fsSync, artifactPath, finalDest) {
+    ensureDir(path.dirname(finalDest));
+    const absArt = path.resolve(artifactPath);
+    const absDest = path.resolve(finalDest);
+    if (absArt === absDest) return absDest;
+    try {
+      if (fsSync.existsSync(absDest)) {
+        try {
+          fsSync.unlinkSync(absDest);
+        } catch (_) {}
+      }
+      fsSync.renameSync(absArt, absDest);
+      return absDest;
+    } catch (_) {
+      fsSync.copyFileSync(absArt, absDest);
+      safeUnlink(fsSync, absArt);
+      return absDest;
+    }
+  }
+
+  function cleanStageDebris(fsSync, stageRoot) {
+    try {
+      for (const name of fsSync.readdirSync(stageRoot)) {
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(name)) {
+          safeUnlink(fsSync, path.join(stageRoot, name));
+        }
+      }
+    } catch (_) {}
+  }
+
+  /**
+   * 扫 staging：CDP 直写后若 Playwright saveAs 未跑，把成品搬到下载根目录并改名避让。
+   */
+  function promoteOrphanStaging(fsSync, stageRoot, dlRoot, preferredName, pending) {
+    let names = [];
+    try {
+      names = fsSync.readdirSync(stageRoot);
+    } catch (_) {
+      return null;
+    }
+    const candidates = [];
+    for (const name of names) {
+      if (!name || name.startsWith('.')) continue;
+      const full = path.join(stageRoot, name);
+      let st;
+      try {
+        st = fsSync.statSync(full);
+      } catch (_) {
+        continue;
+      }
+      if (!st.isFile() || st.size <= 0) continue;
+      // 跳过未写完的 .crdownload / .tmp
+      if (/\.(crdownload|tmp|partial|download)$/i.test(name)) continue;
+      candidates.push({ full, name, size: st.size, mtime: st.mtimeMs || 0 });
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => b.mtime - a.mtime);
+    const pick =
+      (preferredName &&
+        candidates.find(
+          (c) => c.name.toLowerCase() === String(preferredName).toLowerCase()
+        )) ||
+      candidates[0];
+    const target = planSaveTarget(
+      { ...(pending || {}), filename: pending?.filename || preferredName || pick.name },
+      preferredName || pick.name,
+      '',
+      dlRoot
+    );
+    if (target.skipped) {
+      safeUnlink(fsSync, pick.full);
+      return {
+        ok: true,
+        skipped: true,
+        reason: target.reason || 'file_exists',
+        path: target.path,
+        filename: target.filename,
+        size: target.size || 0,
+        downloadDir: target.dir || dlRoot,
+        via: 'staging-orphan-skip',
+        message: target.message || '目标文件已存在，跳过下载'
+      };
+    }
+    const finalPath = promoteStagedFile(fsSync, pick.full, target.path);
+    let size = 0;
+    try {
+      size = fsSync.statSync(finalPath).size;
+    } catch (_) {}
+    return {
+      ok: true,
+      skipped: false,
+      path: finalPath,
+      filename: path.basename(finalPath),
+      size,
+      downloadDir: path.dirname(finalPath),
+      via: 'staging-orphan-promote',
+      promotedFrom: pick.full
+    };
+  }
+
   function bindContextDownloads(context, dlRoot) {
     if (!context || context.__aihelperDlBound) return;
     context.__aihelperDlBound = true;
@@ -63,20 +336,10 @@ function createDownloadHelpers(ctx) {
       })();
       const pending = bs.takePendingDownloadSave() || {};
 
-      // 先定最终路径（同名跳过/改名），再 saveAs；CDP 只写 staging，不会直接覆盖最终文件
+      // 1) 文件名已知时立刻判同名：可跳过则 cancel，不必等整包下完
       let target;
       try {
-        target = resolveSaveTarget({
-          path: pending.path,
-          dir: pending.dir || pending.saveDir,
-          filename: pending.filename,
-          suggested: suggestedRaw,
-          url,
-          defaultDir: dlRoot,
-          userDataPath,
-          skipIfExists: pending.skipIfExists !== false,
-          force: pending.force === true
-        });
+        target = planSaveTarget(pending, suggestedRaw, url, dlRoot);
       } catch (e) {
         target = {
           skipped: false,
@@ -90,7 +353,6 @@ function createDownloadHelpers(ctx) {
         try {
           await download.cancel();
         } catch (_) {}
-        // 若 staging 里已有同名/碎片，清掉
         try {
           const maybe = path.join(stageRoot, path.basename(target.filename || suggestedRaw || ''));
           safeUnlink(fsSync, maybe);
@@ -117,14 +379,13 @@ function createDownloadHelpers(ctx) {
       try {
         const dest = target.path;
         ensureDir(path.dirname(dest));
-        // saveAs 前再查一次，防并发双写（不先 await path()，避免大文件白等整包下完）
-        const again = resolveSaveTarget({
-          path: dest,
-          defaultDir: path.dirname(dest),
-          userDataPath,
-          skipIfExists: pending.skipIfExists !== false,
-          force: pending.force === true
-        });
+        // saveAs 前再查一次，防并发双写
+        const again = planSaveTarget(
+          { ...pending, path: dest, filename: path.basename(dest) },
+          suggestedRaw,
+          url,
+          dlRoot
+        );
         if (again.skipped) {
           try {
             await download.cancel();
@@ -148,35 +409,46 @@ function createDownloadHelpers(ctx) {
           return;
         }
         const finalDest = again.path || dest;
-        await download.saveAs(finalDest);
-        // 清理 staging 碎片（不阻塞主路径）
-        try {
-          for (const name of fsSync.readdirSync(stageRoot)) {
-            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(name)) {
-              safeUnlink(fsSync, path.join(stageRoot, name));
-            }
-          }
-        } catch (_) {}
+        // 先落到 staging 唯一名，再 promote，避免 CDP 已写同名时 saveAs 覆盖混乱
+        const stageTmp = path.join(
+          stageRoot,
+          `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${path.basename(finalDest)}`
+        );
+        ensureDir(stageRoot);
+        await download.saveAs(stageTmp);
         let size = 0;
         try {
-          size = fsSync.statSync(finalDest).size;
+          size = fsSync.statSync(stageTmp).size;
         } catch (_) {}
-        if (!size) throw new Error('saveAs 后文件为空或不存在: ' + finalDest);
+        if (!size) throw new Error('saveAs 后文件为空或不存在: ' + stageTmp);
+        const promoted = promoteStagedFile(fsSync, stageTmp, finalDest);
+        cleanStageDebris(fsSync, stageRoot);
+        // 顺带清掉 CDP 直写的同名残留
+        try {
+          const cdpLeftover = path.join(stageRoot, path.basename(suggestedRaw || finalDest));
+          if (path.resolve(cdpLeftover) !== path.resolve(promoted)) {
+            safeUnlink(fsSync, cdpLeftover);
+          }
+        } catch (_) {}
+        try {
+          size = fsSync.statSync(promoted).size;
+        } catch (_) {}
         const rec = {
           ok: true,
           skipped: false,
-          path: finalDest,
-          filename: path.basename(finalDest),
+          path: promoted,
+          filename: path.basename(promoted),
           url,
           suggestedRaw,
           size,
-          downloadDir: path.dirname(finalDest),
+          downloadDir: path.dirname(promoted),
+          via: 'saveAs-promote',
           at: new Date().toISOString()
         };
         bs.pushDownloadRecord(rec);
         bs.logAction('browser.download', rec);
       } catch (err) {
-        // 失败时再尝试 path() 抢救 staging 文件（短超时心态：path 可能已就绪）
+        // 失败：path() 或扫 staging 孤儿文件，promote 到最终目录
         let recovered = '';
         let artifactPath = '';
         try {
@@ -189,17 +461,12 @@ function createDownloadHelpers(ctx) {
         }
         try {
           if (artifactPath && fsSync.existsSync(artifactPath)) {
-            const t2 = resolveSaveTarget({
-              path: pending.path,
-              dir: pending.dir || pending.saveDir,
-              filename: pending.filename || suggestedRaw,
-              suggested: suggestedRaw,
+            const t2 = planSaveTarget(
+              pending,
+              suggestedRaw || path.basename(artifactPath),
               url,
-              defaultDir: dlRoot,
-              userDataPath,
-              skipIfExists: pending.skipIfExists !== false,
-              force: pending.force === true
-            });
+              dlRoot
+            );
             if (t2.skipped) {
               safeUnlink(fsSync, artifactPath);
               const rec = {
@@ -220,13 +487,35 @@ function createDownloadHelpers(ctx) {
               bs.logAction('browser.download.skip', rec);
               return;
             }
-            recovered = t2.path;
-            ensureDir(path.dirname(recovered));
-            fsSync.copyFileSync(artifactPath, recovered);
-            safeUnlink(fsSync, artifactPath);
+            recovered = promoteStagedFile(fsSync, artifactPath, t2.path);
           }
         } catch (_) {
           recovered = '';
+        }
+        if (!recovered) {
+          try {
+            const orphan = promoteOrphanStaging(
+              fsSync,
+              stageRoot,
+              dlRoot,
+              suggestedRaw || pending.filename,
+              pending
+            );
+            if (orphan && orphan.path) {
+              const rec = {
+                ...orphan,
+                url,
+                suggestedRaw,
+                at: new Date().toISOString()
+              };
+              bs.pushDownloadRecord(rec);
+              bs.logAction(
+                orphan.skipped ? 'browser.download.skip' : 'browser.download',
+                rec
+              );
+              return;
+            }
+          } catch (_) {}
         }
         if (recovered) {
           let size = 0;
@@ -242,6 +531,7 @@ function createDownloadHelpers(ctx) {
             size,
             recoveredFrom: artifactPath || '',
             downloadDir: path.dirname(recovered),
+            via: 'recover-promote',
             at: new Date().toISOString()
           };
           bs.pushDownloadRecord(rec);
@@ -455,8 +745,8 @@ function createDownloadHelpers(ctx) {
       url,
       defaultDir: dlRoot,
       userDataPath,
-      skipIfExists: opts.skipIfExists !== false,
-      force: opts.force === true
+      skipIfExists: opts.skipIfExists === true,
+      force: downloadOverwrite(opts)
     });
     if (target.skipped) {
       try {
@@ -481,42 +771,54 @@ function createDownloadHelpers(ctx) {
       return rec;
     }
     const dest = target.path;
-    await download.saveAs(dest);
+    const stageRoot = incomingDir(dlRoot);
+    const stageTmp = path.join(
+      stageRoot,
+      `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${path.basename(dest)}`
+    );
+    ensureDir(stageRoot);
+    await download.saveAs(stageTmp);
     let size = 0;
     try {
-      size = fsSync.statSync(dest).size;
+      size = fsSync.statSync(stageTmp).size;
     } catch (_) {}
-    if (!size) throw new Error('saveAs 后文件为空: ' + dest);
-    let finalPath = dest;
+    if (!size) throw new Error('saveAs 后文件为空: ' + stageTmp);
+    let finalPath = promoteStagedFile(fsSync, stageTmp, dest);
     if (!opts.filename && !opts.path) {
       try {
-        const buf = fsSync.readFileSync(dest);
+        const buf = fsSync.readFileSync(finalPath);
         const kind = sniffBinaryKind(buf);
         if (kind && kind !== 'html') {
           const want = kind === 'jpg' ? ['.jpg', '.jpeg', '.jfif'] : ['.' + kind];
-          const cur = path.extname(dest).toLowerCase();
+          const cur = path.extname(finalPath).toLowerCase();
           if (!want.includes(cur)) {
             const next =
-              dest.replace(/\.[^.]+$/, '') + (kind === 'jpg' ? '.jpg' : '.' + kind);
+              finalPath.replace(/\.[^.]+$/, '') + (kind === 'jpg' ? '.jpg' : '.' + kind);
             // 改扩展名时也走同名策略，禁止覆盖已有 file.jpg
             const nextTarget = resolveSaveTarget({
               path: next,
               defaultDir: path.dirname(next),
               userDataPath,
-              skipIfExists: opts.skipIfExists !== false,
-              force: opts.force === true
+              skipIfExists: opts.skipIfExists === true,
+              force: downloadOverwrite(opts)
             });
             if (nextTarget.skipped) {
-              // 目标扩展名文件已存在：保留当前 dest，或 unique
-              finalPath = dest;
+              // 目标扩展名文件已存在：保留当前路径
             } else {
-              fsSync.renameSync(dest, nextTarget.path);
+              fsSync.renameSync(finalPath, nextTarget.path);
               finalPath = nextTarget.path;
             }
           }
         }
       } catch (_) {}
     }
+    cleanStageDebris(fsSync, stageRoot);
+    try {
+      const cdpLeftover = path.join(stageRoot, path.basename(suggestedRaw || finalPath));
+      if (path.resolve(cdpLeftover) !== path.resolve(finalPath)) {
+        safeUnlink(fsSync, cdpLeftover);
+      }
+    } catch (_) {}
     const rec = {
       ok: true,
       skipped: false,
@@ -526,7 +828,7 @@ function createDownloadHelpers(ctx) {
       suggestedRaw,
       size: fsSync.statSync(finalPath).size,
       downloadDir: path.dirname(finalPath),
-      via: 'playwright-saveAs',
+      via: 'playwright-saveAs-promote',
       at: new Date().toISOString()
     };
     bs.pushDownloadRecord(rec);
@@ -577,8 +879,6 @@ function createDownloadHelpers(ctx) {
     context.on('request', onRequest);
     context.on('response', onResponse);
 
-    const waiterPromise = bs.waitNextDownload(timeoutMs).catch(() => null);
-
     try {
       if (args.selector || args.text) {
         await getRobustClick()(p, args);
@@ -586,55 +886,79 @@ function createDownloadHelpers(ctx) {
         return { ok: false, error: '需要 selector 或 text' };
       }
 
-      // 竞速：download 记录 vs 网络 URL（每 100ms），有 URL 后最多再等 400ms 给 blob 事件
-      const t0 = Date.now();
-      let waited = null;
-      let waiterDone = false;
-      waiterPromise.then((r) => {
-        waiterDone = true;
-        waited = r;
+      // 边等 Playwright 记录，边扫 staging 稳定文件；有网络 URL 也可提前走 HTTP
+      const pending = bs.peekPendingDownloadSave() || args || {};
+      const settledPromise = waitDownloadSettled({
+        timeoutMs,
+        pending,
+        preferredName: pending.filename || ''
       });
+
+      // 有明确文件 URL 时：最多再等 800ms 给 blob/download 事件，否则走 HTTP
+      const t0 = Date.now();
       let netSeenAt = 0;
+      let settled = null;
+      let settledDone = false;
+      settledPromise.then((r) => {
+        settledDone = true;
+        settled = r;
+      });
 
       while (Date.now() - t0 < timeoutMs) {
-        if (waiterDone) break;
+        if (settledDone) break;
         if (netUrl && /^https?:\/\//i.test(netUrl)) {
           if (!netSeenAt) netSeenAt = Date.now();
-          if (Date.now() - netSeenAt >= 400) break;
+          // 给 download/staging 一点时间；超时则用 HTTP
+          if (Date.now() - netSeenAt >= 800) break;
         }
         await new Promise((r) => setTimeout(r, 100));
       }
-      if (!waiterDone) {
-        waited = await Promise.race([
-          waiterPromise,
-          new Promise((r) => setTimeout(() => r(null), 150))
+
+      if (!settledDone) {
+        settled = await Promise.race([
+          settledPromise,
+          new Promise((r) => setTimeout(() => r(null), netUrl ? 200 : Math.min(timeoutMs, 3000)))
         ]);
-      } else if (waited == null) {
-        waited = await waiterPromise;
+      } else if (settled == null) {
+        settled = await settledPromise;
       }
 
-      if (waited && waited.ok && waited.path) {
-        return { ok: true, method: 'playwright-download', saved: waited };
-      }
-      if (waited && waited.skipped && waited.path) {
-        return { ok: true, method: 'playwright-download', saved: waited };
+      if (settled && settled.ok && settled.saved && settled.saved.path) {
+        return {
+          ok: true,
+          method: settled.via || 'download-settled',
+          saved: settled.saved
+        };
       }
       if (netUrl && /^https?:\/\//i.test(netUrl)) {
         return { ok: true, url: netUrl, method: netMethod || 'network', needHttp: true };
       }
-      if (waited && waited.ok === false && waited.error) {
-        return {
-          ok: false,
-          error: waited.error,
-          method: 'none'
-        };
-      }
+      // 最后再扫一次 staging
+      try {
+        const fsSync = require('fs');
+        const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
+        const stageRoot = incomingDir(dlRoot);
+        const orphan = promoteOrphanStaging(
+          fsSync,
+          stageRoot,
+          dlRoot,
+          pending.filename || '',
+          pending
+        );
+        if (orphan && orphan.path) {
+          const rec = { ...orphan, at: new Date().toISOString() };
+          bs.pushDownloadRecord(rec);
+          bs.logAction(orphan.skipped ? 'browser.download.skip' : 'browser.download', rec);
+          return { ok: true, method: 'staging-final', saved: rec };
+        }
+      } catch (_) {}
       return {
         ok: false,
         error:
-          (waited && waited.error) ||
-          '点击后未出现下载事件，也未拦截到文件 URL。请确认按钮会触发文件下载，或提供更精确的 selector',
-        method: 'none'
+          (settled && settled.error) ||
+          '点击后未出现下载事件，staging 无成品，也未拦截到文件 URL。请确认按钮会触发文件下载，或提供更精确的 selector',
+        method: 'none',
+        downloadDir: resolveBrowserDownloadDir(cfg, userDataPath)
       };
     } finally {
       try {
@@ -959,8 +1283,8 @@ function createDownloadHelpers(ctx) {
       contentDisposition: cd,
       defaultDir: dlRoot,
       userDataPath,
-      skipIfExists: opts.skipIfExists !== false,
-      force: opts.force === true
+      skipIfExists: opts.skipIfExists === true,
+      force: downloadOverwrite(opts)
     });
     if (target.skipped) {
       const rec = {
@@ -1010,6 +1334,8 @@ function createDownloadHelpers(ctx) {
     extractHrefFromTarget,
     savePlaywrightDownload,
     clickAndCaptureDownload,
+    waitDownloadSettled,
+    promoteOrphanStaging,
     resolveDownloadUrl,
     cookieHeaderForUrl,
     sniffBinaryKind,

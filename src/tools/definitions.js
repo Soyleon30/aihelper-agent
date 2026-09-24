@@ -99,7 +99,7 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'download_file',
       description:
-        '下载文件到配置的下载目录（可用 path/dir/filename 指定位置与名称）。同名文件或同一 URL 默认跳过（skipIfExists）。返回本地绝对路径。',
+        '下载文件到配置的下载目录（可用 path/dir/filename 指定位置与名称）。同名默认改名 file(1).ext；skipIfExists=true 才跳过；force/overwrite 才覆盖。返回本地绝对路径。',
       parameters: {
         type: 'object',
         properties: {
@@ -109,7 +109,7 @@ const TOOL_DEFINITIONS = [
           dir: { type: 'string', description: '可选保存目录（与 filename 配合）' },
           skipIfExists: {
             type: 'boolean',
-            description: '默认 true：同名文件或 URL 已存在则跳过'
+            description: '默认 false：同名改名；true 则跳过'
           },
           force: { type: 'boolean', description: 'true 则强制覆盖/重新下载' },
           timeoutMs: { type: 'number' }
@@ -290,7 +290,7 @@ const TOOL_DEFINITIONS = [
           dir: { type: 'string', description: 'waitDownload 时可选保存目录' },
           skipIfExists: {
             type: 'boolean',
-            description: 'waitDownload 时默认 true：同名跳过；false 则改名 file(1).ext'
+            description: 'waitDownload 时默认 false：同名改名 file(1).ext；true 才跳过'
           },
           overwrite: {
             type: 'boolean',
@@ -309,11 +309,16 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_wait_download',
       description:
-        '等待下一次浏览器内下载完成（页面点下载按钮后）。返回保存绝对路径与解码后的文件名；默认目录为 下载\\AIHelper。',
+        '等待下一次浏览器内下载完成。同时监听 Playwright 事件与 .aihelper-incoming 落盘；文件写稳后自动搬到下载目录并同名改名。返回绝对路径。',
       parameters: {
         type: 'object',
         properties: {
-          timeoutMs: { type: 'number', description: '超时毫秒，默认 12000' }
+          timeoutMs: { type: 'number', description: '超时毫秒，默认 12000' },
+          filename: { type: 'string' },
+          path: { type: 'string' },
+          dir: { type: 'string' },
+          skipIfExists: { type: 'boolean', description: '默认 false：同名改名' },
+          overwrite: { type: 'boolean' }
         }
       }
     }
@@ -354,19 +359,19 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_download',
       description:
-        '【推荐】点页面下载按钮/链接并落盘。可用 filename/path/dir 指定保存位置与名称；同名默认跳过（skipIfExists）。参数 selector/text 或 url；返回 path。',
+        '【推荐】点页面下载按钮/链接并落盘。可用 filename/path/dir 指定保存位置与名称；同名默认改名 file(1).ext。参数 selector/text 或 url；返回 path。',
       parameters: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: '已知文件 URL 时直接下' },
-          selector: { type: 'string', description: '下载按钮/链接 CSS' },
-          text: { type: 'string', description: '下载按钮可见文本（须与用户指令一致）' },
-          filename: { type: 'string', description: '可选保存文件名' },
-          path: { type: 'string', description: '可选完整保存路径' },
-          dir: { type: 'string', description: '可选保存目录（与 filename 配合）' },
+          selector: { type: 'string' },
+          text: { type: 'string' },
+          url: { type: 'string' },
+          filename: { type: 'string' },
+          path: { type: 'string' },
+          dir: { type: 'string' },
           skipIfExists: {
             type: 'boolean',
-            description: '默认 true：目标同名文件已存在则跳过'
+            description: '默认 false：同名改名；true 才跳过'
           },
           force: { type: 'boolean', description: 'true 则覆盖同名文件（等同 overwrite）' },
           overwrite: { type: 'boolean', description: 'true 则覆盖同名文件' },

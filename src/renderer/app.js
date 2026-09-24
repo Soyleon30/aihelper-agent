@@ -202,7 +202,7 @@
       c.tools?.download?.dir || c.paths?.downloadDir || '';
     $('cfgScreenshotDir').value =
       c.tools?.browser?.screenshotDir || c.paths?.screenshotDir || '';
-    $('cfgDownloadSkip').checked = c.tools?.download?.skipIfExists !== false;
+    $('cfgDownloadSkip').checked = c.tools?.download?.skipIfExists === true;
     $('cfgDownloadDedupeHash').checked = c.tools?.download?.dedupeByHash !== false;
     const mail = c.tools?.mail || {};
     $('cfgMailEnabled').checked = mail.enabled !== false;

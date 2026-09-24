@@ -199,7 +199,8 @@ function resolveIncomingDir(downloadRoot) {
 
 /**
  * 解析保存目标：支持 path / dir+filename / 默认下载目录。
- * skipIfExists=true 且同名已存在 → skipped；否则 uniquePath 避让。
+ * 默认同名 → uniquePath 改名避让（file(1).ext），不覆盖。
+ * skipIfExists=true 且同名已存在 → skipped。
  * force=true 覆盖同名（仍写原路径，不改名）。
  * 空文件（size=0）不视为有效同名，允许重下覆盖空壳。
  */
@@ -239,7 +240,8 @@ function resolveSaveTarget(opts = {}) {
   ensureDir(dir);
   let dest = path.join(dir, base);
   const force = opts.force === true;
-  const skipIfExists = opts.skipIfExists !== false;
+  // 默认 false：同名改名，不跳过、不覆盖
+  const skipIfExists = opts.skipIfExists === true;
   const existed = existingPath(dest);
 
   if (!force && existed) {
@@ -262,7 +264,7 @@ function resolveSaveTarget(opts = {}) {
           explicitPath
         };
       }
-      // 不跳过：改名避让（force 才覆盖）
+      // 默认同名改名避让（force 才覆盖）
       dest = uniquePath(dir, base);
     } else {
       dest = existed;
@@ -272,6 +274,7 @@ function resolveSaveTarget(opts = {}) {
   return {
     ok: true,
     skipped: false,
+    renamed: path.basename(dest) !== base,
     dir: path.dirname(dest),
     filename: path.basename(dest),
     path: dest,

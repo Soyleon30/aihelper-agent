@@ -69,7 +69,7 @@
     "download": {
       "enabled": true,
       "dir": "",
-      "skipIfExists": true,
+      "skipIfExists": false,
       "dedupeByHash": true,
       "timeoutMs": 30000
     },

@@ -6,6 +6,15 @@
 
 ---
 
+## [1.6.16] — 2026-09-24
+
+### 下载完成检测 + 同名自动改名
+- **根因**：CDP 已把文件写进 `.aihelper-incoming`，代码只等 Playwright download 事件 → 误报「等待下载超时」
+- 新增 `waitDownloadSettled`：边等 Playwright 记录，边扫 staging；文件大小连续稳定即视为完成并 promote
+- `browser_click(waitDownload)` / `browser_wait_download` / `browser_download` / navigate 下载均走该检测
+- 默认同名策略改为 **改名 `file(1).ext`**（不再默认跳过/覆盖）；`skipIfExists=true` 才跳过，`overwrite` 才覆盖
+- staging → 下载根目录自动搬出；超时兜底仍会 promote 已落盘文件，避免「文件在但报失败」
+
 ## [1.6.15] — 2026-09-23
 
 ### Coremail 正文：mail-content 内 iframe 的 p 段

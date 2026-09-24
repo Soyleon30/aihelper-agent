@@ -33,13 +33,24 @@ const skip = resolveSaveTarget({
 });
 ok('skip when exists', skip.skipped === true && skip.path === f1);
 
+// 默认（不传 skipIfExists）→ 改名避让
+const def = resolveSaveTarget({
+  filename: 'report.pdf',
+  defaultDir: tmp,
+  force: false
+});
+ok(
+  'default renames',
+  !def.skipped && def.path !== f1 && /report\(1\)\.pdf$/i.test(def.path) && def.renamed === true
+);
+
 const uniq = resolveSaveTarget({
   filename: 'report.pdf',
   defaultDir: tmp,
   skipIfExists: false,
   force: false
 });
-ok('unique when not skip', !uniq.skipped && uniq.path !== f1 && /report\(1\)\.pdf$/i.test(uniq.path));
+ok('unique when not skip', !uniq.skipped && uniq.path !== f1 && /report\(\d+\)\.pdf$/i.test(uniq.path));
 
 const force = resolveSaveTarget({
   filename: 'report.pdf',
