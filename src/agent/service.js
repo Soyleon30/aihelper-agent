@@ -91,27 +91,45 @@ function createAgentService(options = {}) {
   }
 
   function abort() {
+    const had = !!abortController;
     if (abortController) {
       try {
         abortController.abort();
       } catch (_) {}
-      // 勿立刻置 null：工具轮次仍靠 signal.aborted 判断；finally 再清
-      try {
-        if (tools && typeof tools.abortRunning === 'function') {
-          tools.abortRunning();
-        }
-      } catch (_) {}
+      // 勿立刻置 null：进行中的 chat 仍靠 signal.aborted；finally 再清
+    }
+    try {
+      if (tools && typeof tools.abortRunning === 'function') {
+        tools.abortRunning();
+      }
+    } catch (_) {}
+    if (had) {
       emit({ type: 'aborted' });
       log('info', 'chat.aborted', {});
       return { ok: true };
     }
+    // 无 chat 但可能残留工具 abort 标志：一并清掉，避免下一轮秒失败
+    try {
+      if (tools && typeof tools.clearAbort === 'function') tools.clearAbort();
+    } catch (_) {}
     return { ok: false, error: '无进行中的任务' };
   }
 
   async function chat(payload) {
+    // 新一轮开始：必须清掉上一轮「停止」残留，否则工具会立刻 AbortError → 界面「（已停止）」
     try {
       if (tools && typeof tools.clearAbort === 'function') tools.clearAbort();
     } catch (_) {}
+    // 若仍有未结束的旧 controller，先中止再开新轮（改向）
+    if (abortController) {
+      try {
+        abortController.abort();
+      } catch (_) {}
+      abortController = null;
+      try {
+        if (tools && typeof tools.clearAbort === 'function') tools.clearAbort();
+      } catch (_) {}
+    }
     const userMessage = payload.message || '';
     const history = Array.isArray(payload.history) ? payload.history : [];
     const ao = agentOpts();
@@ -168,10 +186,14 @@ function createAgentService(options = {}) {
     abortController = new AbortController();
     const signal = abortController.signal;
 
+    const workspace = String(
+      config.paths?.workspace || config.tools?.file?.workspace || ''
+    ).trim();
     const systemPrompt = buildSystemPrompt(
       ao.systemPrompt ||
         '你是一个可操作本地文件与网页的智能助手。优先少轮次完成任务，用中文简短回答。',
-      ao
+      ao,
+      { workspace }
     );
 
     // 历史：仅当开启裁剪且 maxHistoryTurns>0 时截断
@@ -684,6 +706,16 @@ function createAgentService(options = {}) {
     }
   }
 
+  async function runTool(name, args) {
+    try {
+      if (tools && typeof tools.clearAbort === 'function') tools.clearAbort();
+    } catch (_) {}
+    if (!tools || typeof tools.execute !== 'function') {
+      throw new Error('工具未就绪');
+    }
+    return tools.execute(name, args || {});
+  }
+
   async function shutdown(opts = {}) {
     abort();
     await tools.shutdown(opts);
@@ -695,6 +727,7 @@ function createAgentService(options = {}) {
     abort,
     testProvider,
     reloadConfig,
+    runTool,
     shutdown
   };
 }

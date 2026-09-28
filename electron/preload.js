@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('aihelper', {
   deleteSession: (id) => ipcRenderer.invoke('session:delete', id),
   openSessionDir: () => ipcRenderer.invoke('session:openDir'),
   browserState: () => ipcRenderer.invoke('browser:state'),
+  recordStatus: () => ipcRenderer.invoke('browser:recordStatus'),
+  recordStart: (args) => ipcRenderer.invoke('browser:recordStart', args),
+  recordStop: (args) => ipcRenderer.invoke('browser:recordStop', args),
   mailTest: () => ipcRenderer.invoke('mail:test'),
   onAgentEvent: (callback) => {
     const handler = (_event, data) => callback(data);

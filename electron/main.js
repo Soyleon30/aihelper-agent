@@ -112,6 +112,17 @@ function ensureUserConfig() {
           }
         }
       }
+      if (!cur.paths && def.paths) {
+        cur.paths = { ...def.paths };
+        changed = true;
+      } else if (cur.paths && def.paths) {
+        for (const k of ['workspace', 'downloadDir', 'screenshotDir']) {
+          if (cur.paths[k] === undefined && def.paths[k] !== undefined) {
+            cur.paths[k] = def.paths[k];
+            changed = true;
+          }
+        }
+      }
       if (changed) {
         fs.writeFileSync(userConfig, JSON.stringify(cur, null, 2), 'utf8');
       }
@@ -232,6 +243,17 @@ function registerIpc() {
       home: app.getPath('home'),
       exe: app.getPath('exe'),
       resources: process.resourcesPath || path.join(__dirname, '..'),
+      workspace: (() => {
+        try {
+          const cfgPath = path.join(app.getPath('userData'), 'config.json');
+          if (fs.existsSync(cfgPath)) {
+            const c = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+            const w = (c.paths && c.paths.workspace) || '';
+            if (w && String(w).trim()) return path.resolve(String(w).trim());
+          }
+        } catch (_) {}
+        return '';
+      })(),
       logs,
       logFile: st.file || null,
       actionFile: st.actionFile || null,
@@ -354,6 +376,26 @@ function registerIpc() {
   });
 
   ipcMain.handle('browser:state', async () => browserSession.getState());
+
+  ipcMain.handle('browser:recordStatus', async () => browserSession.getRecordingStatus());
+
+  ipcMain.handle('browser:recordStart', async (_e, args) => {
+    try {
+      if (!agentService) return { ok: false, error: 'Agent 未就绪' };
+      return await agentService.runTool('browser_record_start', args || {});
+    } catch (err) {
+      return { ok: false, error: err.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('browser:recordStop', async (_e, args) => {
+    try {
+      if (!agentService) return { ok: false, error: 'Agent 未就绪' };
+      return await agentService.runTool('browser_record_stop', args || {});
+    } catch (err) {
+      return { ok: false, error: err.message || String(err) };
+    }
+  });
 
   ipcMain.handle('mail:test', async () => {
     try {

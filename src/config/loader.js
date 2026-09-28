@@ -50,6 +50,7 @@ function loadDefaultConfig(electronDir) {
       http: { enabled: true, timeoutMs: 30000, maxBodyBytes: 5242880 },
       browser: { enabled: true, headless: false, timeoutMs: 30000 }
     },
+    paths: { workspace: '', downloadDir: '', screenshotDir: '' },
     ui: { theme: 'dark', language: 'zh-CN' }
   };
 }

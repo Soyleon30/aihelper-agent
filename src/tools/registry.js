@@ -17,7 +17,17 @@ function createToolRegistry(options = {}) {
   };
 
   if (toolsCfg.file?.enabled !== false) {
-    Object.assign(handlers, createFileTools({ config: toolsCfg.file || {} }));
+    const workspace =
+      (pathsConfig && pathsConfig.workspace) ||
+      (toolsCfg.file && toolsCfg.file.workspace) ||
+      '';
+    Object.assign(
+      handlers,
+      createFileTools({
+        config: { ...(toolsCfg.file || {}), workspace },
+        workspace
+      })
+    );
   }
   if (toolsCfg.http?.enabled !== false) {
     Object.assign(handlers, createHttpTools({ config: toolsCfg.http || {} }));

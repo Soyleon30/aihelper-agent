@@ -86,9 +86,31 @@ function inferPreferredTools(userMessage) {
   return tips.length ? tips.join('；') : '与任务匹配的工具';
 }
 
-function buildSystemPrompt(base, agentCfg = {}) {
+function buildWorkspaceRules(workspace) {
+  const ws = String(workspace || '').trim();
+  if (!ws) {
+    return [
+      '【工作区】未配置 paths.workspace。',
+      '写文件时必须使用用户给出的绝对路径；禁止把相对路径落到安装目录/程序目录。',
+      '请提示用户在设置中配置「默认工作区」。'
+    ].join('\n');
+  }
+  return [
+    '【工作区 - 每轮对话生效，必须遵守】',
+    `1. 当前默认工作区（workspace）= ${ws}`,
+    '2. 所有相对路径（如 notes.txt、./out/a.md、subdir/x）一律相对上述工作区解析，禁止写到安装目录、exe 旁、process.cwd。',
+    '3. 用户未指定路径时：list_dir/read/write/append 默认使用工作区；写新文件用「工作区内相对路径」或「工作区绝对路径」。',
+    '4. 仅当用户明确给出其他盘符/绝对路径时才离开工作区。',
+    '5. 回复中引用路径时尽量给出解析后的绝对路径，便于用户核对。',
+    '6. 可用 get_workspace 确认当前工作区。'
+  ].join('\n');
+}
+
+function buildSystemPrompt(base, agentCfg = {}, runtime = {}) {
   const parts = [];
   if (base) parts.push(base.trim());
+  // 工作区规则置顶，每轮对话强制注入
+  parts.push(buildWorkspaceRules(runtime.workspace || agentCfg.workspace || ''));
   if (agentCfg.antiHallucination !== false) {
     parts.push(agentCfg.antiHallucinationRules || DEFAULT_ANTI_HALLUCINATION_RULES);
   }
@@ -340,6 +362,7 @@ function wrapFinalContent(content, opts = {}) {
 module.exports = {
   DEFAULT_ANTI_HALLUCINATION_RULES,
   DEFAULT_EFFICIENCY_RULES,
+  buildWorkspaceRules,
   buildSystemPrompt,
   looksLikeSuccessWithoutEvidence,
   looksLikeFabricatedResult,

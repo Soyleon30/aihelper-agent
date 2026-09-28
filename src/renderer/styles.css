@@ -130,6 +130,40 @@ body {
   background: #12151c;
 }
 
+.record-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  background: #141820;
+}
+.record-bar.is-recording {
+  background: #2a1818;
+  border-bottom-color: #5a3030;
+}
+.record-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #445;
+  flex-shrink: 0;
+}
+.record-bar.is-recording .record-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(232, 93, 93, 0.25);
+  animation: record-pulse 1.2s ease-in-out infinite;
+}
+@keyframes record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.record-label { font-weight: 600; }
+.record-meta { flex: 1; min-width: 120px; }
+.record-actions { display: flex; gap: 8px; margin-left: auto; }
+
 .messages {
   flex: 1;
   overflow: auto;

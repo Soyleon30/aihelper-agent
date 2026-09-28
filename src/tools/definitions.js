@@ -2,14 +2,25 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'get_workspace',
+      description: '返回当前默认工作区绝对路径。相对路径的 list/read/write 都相对此目录。',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'list_dir',
-      description: '列出本地目录内容',
+      description:
+        '列出本地目录。path 可省略（=工作区）；相对路径相对配置的 workspace，勿写到安装目录。',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: '目录绝对路径或相对路径' }
-        },
-        required: ['path']
+          path: {
+            type: 'string',
+            description: '目录路径；相对路径相对 workspace；空则列出 workspace'
+          }
+        }
       }
     }
   },
@@ -17,11 +28,11 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'read_file',
-      description: '读取本地文本文件内容',
+      description: '读取本地文本文件。相对路径相对 workspace。',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: '文件路径' },
+          path: { type: 'string', description: '文件路径（相对=工作区）' },
           encoding: { type: 'string', description: '编码，默认 utf8' },
           maxBytes: { type: 'number', description: '最大读取字节数' }
         },
@@ -33,11 +44,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: '写入本地文件（覆盖或创建）',
+      description:
+        '写入本地文件。相对路径相对 workspace（如 notes.txt → 工作区/notes.txt），禁止写到安装目录。',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: '文件路径' },
+          path: { type: 'string', description: '文件路径（相对=工作区）' },
           content: { type: 'string', description: '文件内容' },
           encoding: { type: 'string', description: '编码，默认 utf8' }
         },
@@ -49,7 +61,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'append_file',
-      description: '追加内容到本地文件',
+      description: '追加内容到本地文件。相对路径相对 workspace。',
       parameters: {
         type: 'object',
         properties: {
@@ -64,7 +76,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'delete_path',
-      description: '删除文件或空目录',
+      description: '删除文件或空目录。相对路径相对 workspace。',
       parameters: {
         type: 'object',
         properties: {

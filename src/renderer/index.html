@@ -38,19 +38,38 @@
             <button id="btnSaveSession" class="btn ghost" title="立即保存到文件">保存</button>
             <button id="btnCopyAll" class="btn ghost" title="复制全部对话">复制全部</button>
             <button id="btnClear" class="btn ghost">清空本对话</button>
-            <button id="btnAbort" class="btn danger" disabled>停止</button>
+            <button id="btnAbort" class="btn danger" disabled title="仅中止当前轮，不改向">停止</button>
           </div>
         </header>
         <div id="sessionBar" class="session-bar">
           <span id="sessionTitle" class="muted">会话加载中…</span>
           <span id="sessionSaveHint" class="muted"></span>
         </div>
+        <div id="recordBar" class="record-bar">
+          <span id="recordDot" class="record-dot" aria-hidden="true"></span>
+          <span id="recordLabel" class="record-label">录制：未开始</span>
+          <span id="recordMeta" class="muted record-meta"></span>
+          <div class="record-actions">
+            <button id="btnRecordStart" type="button" class="btn ghost" title="先打开目标网页，再点开始，然后在 Chrome 里手操">
+              开始录制
+            </button>
+            <button id="btnRecordStop" type="button" class="btn ghost" disabled title="停止并保存流程到 flows 目录">
+              停止并保存
+            </button>
+          </div>
+        </div>
         <div id="messages" class="messages"></div>
         <div id="tracePanel" class="trace-panel hidden"></div>
         <footer class="composer">
-          <textarea id="input" rows="3" placeholder="多轮对话：可接着上一句继续说。浏览器会保持当前页面，你可手动操作后再让助手继续…"></textarea>
+          <textarea
+            id="input"
+            rows="3"
+            placeholder="多轮对话：可接着上一句继续说。运行中也可直接输入新指示后发送（自动打断改向）…"
+          ></textarea>
           <div class="composer-actions">
-            <div class="hint">多轮上下文 · 会话自动存盘 · 浏览器会话保持（可人工操作后继续）</div>
+            <div class="hint">
+              运行中可输入 · 再发送=改向 · 「停止」=只中止 · 浏览器会话保持
+            </div>
             <button id="btnSend" class="btn primary">发送</button>
           </div>
         </footer>
@@ -317,7 +336,16 @@
               默认有界面 + 独立配置档（登录可保留）。勿与正在运行的 Chrome/Edge 共用同一用户目录。下载目录见上方。保持会话时对话切换不关页。
             </p>
             <label class="field">
-              <span>文件允许根目录（每行一个，空=不限制）</span>
+              <span>默认工作区 workspace（文件相对路径落这里；每轮对话会告诉模型）</span>
+              <div class="row" style="gap:8px;">
+                <input id="cfgWorkspace" type="text" placeholder="例如 D:\work\projects" style="flex:1;" />
+                <button id="btnPickWorkspace" type="button" class="btn ghost">浏览</button>
+                <button id="btnOpenWorkspace" type="button" class="btn ghost">打开</button>
+              </div>
+            </label>
+            <p class="muted" id="workspacePathHint" style="margin:4px 0 8px;font-size:12px;"></p>
+            <label class="field">
+              <span>文件允许根目录（每行一个，空=不限制；有工作区时会自动包含工作区）</span>
               <textarea id="cfgAllowedRoots" rows="4" placeholder="D:\work&#10;C:\Users\Public\Documents"></textarea>
             </label>
             <p class="muted" style="margin:4px 0 0;font-size:12px;line-height:1.5;">

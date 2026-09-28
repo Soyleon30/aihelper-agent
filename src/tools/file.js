@@ -29,17 +29,46 @@ function normKey(p) {
  * - 填了父目录则其下所有子路径自动允许（不必再给子目录单独授权）
  * - 不必写双斜杠，D:\\work 与 D:\\work 均可
  */
-function resolveSafePath(inputPath, allowedRoots) {
-  const resolved = path.resolve(normalizePathInput(inputPath));
+function isAbsolutePath(p) {
+  const s = normalizePathInput(p);
+  if (!s) return false;
+  if (path.isAbsolute(s)) return true;
+  // Windows: D:foo / \\server\share
+  if (/^[a-zA-Z]:[\\/]/.test(s) || /^\\\\/.test(s)) return true;
+  return false;
+}
+
+/**
+ * 相对路径基于 workspace 解析，禁止落到 process.cwd()/安装目录。
+ */
+function resolveSafePath(inputPath, allowedRoots, workspace) {
+  const raw = normalizePathInput(inputPath);
+  if (!raw) {
+    const ws = workspace ? path.resolve(normalizePathInput(workspace)) : '';
+    if (ws) return ws;
+    throw new Error('路径为空');
+  }
+  let resolved;
+  if (isAbsolutePath(raw)) {
+    resolved = path.resolve(raw);
+  } else {
+    const base = workspace
+      ? path.resolve(normalizePathInput(workspace))
+      : process.cwd();
+    resolved = path.resolve(base, raw);
+  }
   if (!allowedRoots || !allowedRoots.length) return resolved;
 
   const target = normKey(resolved);
   const ok = allowedRoots.some((root) => {
     const r = normKey(root);
     if (!r) return false;
-    return target === r || target.startsWith(r + path.sep.toLowerCase()) || target.startsWith(r + path.sep);
+    return (
+      target === r ||
+      target.startsWith(r + path.sep.toLowerCase()) ||
+      target.startsWith(r + path.sep)
+    );
   });
-  // Windows: path.sep is `\`, normKey lowercases so sep is still `\`
   if (!ok) {
     const roots = allowedRoots.map((x) => path.resolve(normalizePathInput(x))).join(' | ');
     throw new Error(
@@ -68,11 +97,30 @@ function normalizeAllowedRoots(list) {
 function createFileTools(options = {}) {
   const cfg = options.config || {};
   const maxRead = cfg.maxReadBytes || 2 * 1024 * 1024;
-  const allowedRoots = normalizeAllowedRoots(cfg.allowedRoots || []);
+  let allowedRoots = normalizeAllowedRoots(cfg.allowedRoots || []);
+  const workspaceRaw = String(cfg.workspace || options.workspace || '').trim();
+  const workspace = workspaceRaw ? path.resolve(normalizePathInput(workspaceRaw)) : '';
+  // 有 workspace 时自动纳入白名单（若用户配置了 allowedRoots）
+  if (workspace && allowedRoots.length) {
+    const wk = normKey(workspace);
+    if (!allowedRoots.some((r) => normKey(r) === wk)) {
+      allowedRoots = [...allowedRoots, workspace];
+    }
+  }
 
   return {
+    async get_workspace() {
+      return {
+        ok: true,
+        workspace: workspace || '',
+        message: workspace
+          ? `当前工作区: ${workspace}（相对路径均相对此目录）`
+          : '未配置工作区：请在设置里填写 paths.workspace，否则相对路径可能落到安装目录'
+      };
+    },
+
     async list_dir(args) {
-      const dir = resolveSafePath(args.path, allowedRoots);
+      const dir = resolveSafePath(args.path || (workspace ? '.' : ''), allowedRoots, workspace);
       const entries = await fsp.readdir(dir, { withFileTypes: true });
       const items = await Promise.all(
         entries.map(async (e) => {
@@ -94,7 +142,7 @@ function createFileTools(options = {}) {
     },
 
     async read_file(args) {
-      const file = resolveSafePath(args.path, allowedRoots);
+      const file = resolveSafePath(args.path, allowedRoots, workspace);
       const st = await fsp.stat(file);
       if (!st.isFile()) throw new Error('不是文件');
       const limit = Math.min(args.maxBytes || maxRead, maxRead);
@@ -119,21 +167,21 @@ function createFileTools(options = {}) {
     },
 
     async write_file(args) {
-      const file = resolveSafePath(args.path, allowedRoots);
+      const file = resolveSafePath(args.path, allowedRoots, workspace);
       await fsp.mkdir(path.dirname(file), { recursive: true });
       await fsp.writeFile(file, args.content ?? '', args.encoding || 'utf8');
       return { path: file, bytes: Buffer.byteLength(args.content ?? '', 'utf8') };
     },
 
     async append_file(args) {
-      const file = resolveSafePath(args.path, allowedRoots);
+      const file = resolveSafePath(args.path, allowedRoots, workspace);
       await fsp.mkdir(path.dirname(file), { recursive: true });
       await fsp.appendFile(file, args.content ?? '', 'utf8');
       return { path: file, appended: Buffer.byteLength(args.content ?? '', 'utf8') };
     },
 
     async delete_path(args) {
-      const target = resolveSafePath(args.path, allowedRoots);
+      const target = resolveSafePath(args.path, allowedRoots, workspace);
       const st = await fsp.stat(target);
       if (st.isDirectory()) {
         await fsp.rmdir(target);
@@ -149,5 +197,6 @@ module.exports = {
   createFileTools,
   resolveSafePath,
   normalizePathInput,
-  normalizeAllowedRoots
+  normalizeAllowedRoots,
+  isAbsolutePath
 };

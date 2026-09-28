@@ -45,6 +45,14 @@ function createFlowHelpers(ctx) {
         return;
       }
       rec.steps.push(step);
+      try {
+        bs.logAction('record.step', {
+          action: 'click',
+          steps: rec.steps.length,
+          text: step.text,
+          selector: step.selector
+        });
+      } catch (_) {}
       return;
     }
     if (event === 'page.input') {
@@ -68,6 +76,13 @@ function createFlowHelpers(ctx) {
         return;
       }
       rec.steps.push(step);
+      try {
+        bs.logAction('record.step', {
+          action: 'type',
+          steps: rec.steps.length,
+          selector: step.selector
+        });
+      } catch (_) {}
       return;
     }
     if (event === 'page.key' && data.key === 'Enter') {

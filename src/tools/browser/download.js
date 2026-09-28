@@ -212,6 +212,25 @@ function createDownloadHelpers(ctx) {
     });
   }
 
+  /**
+   * CDP 直写时先做同名检查，避免出现 UUID 文件
+   */
+  async function checkAndSaveToStage(download, url, suggestedRaw, dlRoot) {
+    const pending = bs.takePendingDownloadSave() || {};
+    const target = planSaveTarget(pending, suggestedRaw, url, dlRoot);
+    if (target.skipped) {
+      return { skipped: true, reason: 'file_exists', path: target.path };
+    }
+    const stageRoot = incomingDir(dlRoot);
+    const stageTmp = path.join(
+      stageRoot,
+      `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${path.basename(target.path)}`
+    );
+    ensureDir(stageRoot);
+    await download.saveAs(stageTmp);
+    return { skipped: false, path: stageTmp, target };
+  }
+
   /** staging → 最终目录（同名改名/跳过已在 planSaveTarget 决定） */
   function promoteStagedFile(fsSync, artifactPath, finalDest) {
     ensureDir(path.dirname(finalDest));

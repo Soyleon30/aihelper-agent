@@ -196,6 +196,29 @@ function logAction(event, data) {
   } catch (_) {}
 }
 
+function getRecordingStatus() {
+  const rec = shared.recording;
+  if (!rec || !rec.active) {
+    return {
+      recording: false,
+      flowsHint: shared.userDataPath
+        ? require('path').join(shared.userDataPath, 'flows')
+        : ''
+    };
+  }
+  return {
+    recording: true,
+    name: rec.name || '',
+    steps: Array.isArray(rec.steps) ? rec.steps.length : 0,
+    startedAt: rec.startedAt || '',
+    startUrl: rec.startUrl || '',
+    lastSteps: (rec.steps || []).slice(-8),
+    flowsHint: shared.userDataPath
+      ? require('path').join(shared.userDataPath, 'flows')
+      : ''
+  };
+}
+
 function isPageAlive() {
   return !!(shared.page && !shared.page.isClosed());
 }
@@ -233,6 +256,7 @@ async function getState() {
       } catch (_) {}
     }
     const name = browserMeta.browserName || '浏览器';
+    const recStatus = getRecordingStatus();
     return {
       open: true,
       sessionId: shared.sessionId,
@@ -240,6 +264,9 @@ async function getState() {
       title,
       textPreview,
       frameCount,
+      recording: recStatus.recording,
+      recordName: recStatus.name || '',
+      recordSteps: recStatus.steps || 0,
       launchedAt: shared.launchedAt,
       downloadDir: shared.downloadDir || '',
       userDataDir: shared.userDataDir || '',
@@ -480,6 +507,7 @@ module.exports = {
   setConfig,
   logAction,
   isPageAlive,
+  getRecordingStatus,
   getState,
   closeAll,
   pushDownloadRecord,

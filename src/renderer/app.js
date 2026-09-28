@@ -3,6 +3,8 @@
     config: null,
     history: [],
     busy: false,
+    /** 递增：用于丢弃已停止/被改向轮次的迟到结果 */
+    runId: 0,
     activeProviderKey: 'local',
     session: null,
     autosaveTimer: null,
@@ -120,9 +122,60 @@
 
   function setBusy(busy) {
     state.busy = busy;
-    btnSend.disabled = busy;
+    // 运行中也允许输入与发送（发送=打断并改向），不必先点「停止」
+    btnSend.disabled = false;
     btnAbort.disabled = !busy;
-    inputEl.disabled = busy;
+    inputEl.disabled = false;
+    if (btnSend) {
+      btnSend.textContent = busy ? '改向发送' : '发送';
+      btnSend.title = busy
+        ? '打断当前任务，用输入框内容继续/改方向'
+        : '发送消息';
+    }
+    if (inputEl) {
+      inputEl.placeholder = busy
+        ? '任务进行中：可直接输入新指示后点「改向发送」（自动打断上一轮）…'
+        : '多轮对话：可接着上一句继续说。浏览器会保持当前页面，你可手动操作后再让助手继续…';
+    }
+  }
+
+  let recordPollTimer = null;
+  function renderRecordStatus(st) {
+    const bar = $('recordBar');
+    const label = $('recordLabel');
+    const meta = $('recordMeta');
+    const btnStart = $('btnRecordStart');
+    const btnStop = $('btnRecordStop');
+    if (!bar || !label) return;
+    const on = !!(st && st.recording);
+    bar.classList.toggle('is-recording', on);
+    if (on) {
+      label.textContent = `录制中 · ${st.name || 'flow'}`;
+      meta.textContent = `已记录 ${st.steps || 0} 步${st.startUrl ? ' · ' + String(st.startUrl).slice(0, 60) : ''}`;
+      if (btnStart) btnStart.disabled = true;
+      if (btnStop) btnStop.disabled = false;
+    } else {
+      label.textContent = '录制：未开始';
+      meta.textContent = st && st.flowsHint ? `流程目录: ${st.flowsHint}` : '点「开始录制」后在 Chrome 里手操；步数会在这里增加';
+      if (btnStart) btnStart.disabled = false;
+      if (btnStop) btnStop.disabled = true;
+    }
+  }
+
+  async function refreshRecordStatus() {
+    try {
+      if (!window.aihelper?.recordStatus) return;
+      const st = await window.aihelper.recordStatus();
+      renderRecordStatus(st || { recording: false });
+      if (st && st.recording) {
+        if (!recordPollTimer) {
+          recordPollTimer = setInterval(refreshRecordStatus, 800);
+        }
+      } else if (recordPollTimer) {
+        clearInterval(recordPollTimer);
+        recordPollTimer = null;
+      }
+    } catch (_) {}
   }
 
   function switchView(name) {
@@ -225,6 +278,9 @@
       $('cfgBrowserEphemeral').checked =
         c.tools?.browser?.ephemeral === true || c.tools?.browser?.incognito === true;
     }
+    if ($('cfgWorkspace')) {
+      $('cfgWorkspace').value = c.paths?.workspace || c.tools?.file?.workspace || '';
+    }
     $('cfgAllowedRoots').value = (c.tools?.file?.allowedRoots || []).join('\n');
     const lg = c.logging || {};
     $('cfgLogEnabled').checked = lg.enabled !== false;
@@ -280,6 +336,9 @@
     state.config.tools.download.skipIfExists = $('cfgDownloadSkip').checked;
     state.config.tools.download.dedupeByHash = $('cfgDownloadDedupeHash').checked;
     state.config.paths = state.config.paths || {};
+    if ($('cfgWorkspace')) {
+      state.config.paths.workspace = ($('cfgWorkspace').value || '').trim();
+    }
     state.config.paths.downloadDir = state.config.tools.download.dir;
     state.config.tools.browser = state.config.tools.browser || {};
     state.config.tools.browser.screenshotDir = (
@@ -533,9 +592,15 @@
         ? `当前截图目录: ${paths.screenshots}`
         : '';
     }
+    if ($('workspacePathHint')) {
+      $('workspacePathHint').textContent = paths.workspace
+        ? `当前工作区: ${paths.workspace}`
+        : '未配置工作区：相对路径可能落到安装目录，请填写上方路径并保存';
+    }
     const ver = await window.aihelper.getVersion();
     $('appVersion').textContent = `v${ver}`;
     scheduleAutosave();
+    refreshRecordStatus();
   }
 
   $('btnPickLogDir').addEventListener('click', async () => {
@@ -686,22 +751,79 @@
   });
 
   let aborting = false;
-  btnAbort.addEventListener('click', async () => {
-    if (aborting) return;
+  async function requestAbort(reason) {
+    if (aborting) return { ok: false, busy: true };
     aborting = true;
-    // 立即解锁 UI（后台仍会尽快中断；Playwright 最长约 1 步会结束）
-    setBusy(false);
-    addMessage('system', '正在停止…');
     try {
       const r = await window.aihelper.abort();
-      if (r && r.ok === false) {
-        addMessage('system', r.error || '当前没有进行中的任务');
-      }
-    } catch (e) {
-      addMessage('system', '停止请求已发送');
+      logUi('ui.abort', { reason: reason || 'stop', ok: r?.ok !== false });
+      return r || { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message || String(err) };
     } finally {
       aborting = false;
     }
+  }
+
+  btnAbort.addEventListener('click', async () => {
+    if (!state.busy && !aborting) {
+      addMessage('system', '当前没有进行中的任务');
+      return;
+    }
+    addMessage('system', '正在停止…');
+    state.runId += 1;
+    const r = await requestAbort('button');
+    setBusy(false);
+    if (r && r.ok === false && r.error && r.error !== '无进行中的任务') {
+      addMessage('system', `停止: ${r.error}`);
+    } else {
+      addMessage('system', '已停止。可直接输入新内容继续（不必清对话）。');
+    }
+  });
+
+  $('btnRecordStart')?.addEventListener('click', async () => {
+    try {
+      const name = `flow-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
+      const r = await window.aihelper.recordStart({ name });
+      if (r && r.ok === false) {
+        addMessage('system', `开始录制失败: ${r.error || 'unknown'}`);
+      } else {
+        addMessage(
+          'system',
+          `● 录制已开始（${r.name || name}）。请到 Chrome 里手动点击/输入；这里「已记录 N 步」会增加。完成后点「停止并保存」。`
+        );
+      }
+      await refreshRecordStatus();
+    } catch (err) {
+      addMessage('system', `开始录制失败: ${err.message || err}`);
+    }
+  });
+
+  $('btnRecordStop')?.addEventListener('click', async () => {
+    try {
+      const r = await window.aihelper.recordStop({});
+      if (r && r.ok === false) {
+        addMessage('system', `停止录制失败: ${r.error || 'unknown'}`);
+      } else {
+        addMessage(
+          'system',
+          `■ 录制已保存：${r.steps || 0} 步 → ${r.path || ''}。之后可对助手说「回放流程 ${r.name || ''}」或 browser_flow_run。`
+        );
+      }
+      await refreshRecordStatus();
+    } catch (err) {
+      addMessage('system', `停止录制失败: ${err.message || err}`);
+    }
+  });
+
+  $('btnPickWorkspace')?.addEventListener('click', async () => {
+    const dir = await window.aihelper.selectDirectory();
+    if (dir && $('cfgWorkspace')) $('cfgWorkspace').value = dir;
+  });
+
+  $('btnOpenWorkspace')?.addEventListener('click', async () => {
+    const p = ($('cfgWorkspace')?.value || '').trim();
+    if (p) await window.aihelper.openPath(p);
   });
 
   $('btnNewSession').addEventListener('click', async () => {
@@ -725,25 +847,62 @@
 
   async function send() {
     const text = inputEl.value.trim();
-    if (!text || state.busy) return;
+    if (!text) return;
+
+    // 运行中再发 = 打断改向（steer），无需先点停止
+    const steering = !!state.busy;
+    if (steering) {
+      state.runId += 1;
+      addMessage('system', '已打断上一轮，按新指示继续…');
+      await requestAbort('steer');
+      // 给后端 clearAbort / finally 一点时间
+      await new Promise((r) => setTimeout(r, 120));
+    }
+
     if (!state.session) {
       state.session = await window.aihelper.createSession({});
     }
     inputEl.value = '';
-    logUi('ui.chat_send', { msgLen: text.length, sessionId: state.session?.id });
+    const myRun = ++state.runId;
+    logUi('ui.chat_send', {
+      msgLen: text.length,
+      sessionId: state.session?.id,
+      steer: steering,
+      runId: myRun
+    });
     addMessage('user', text);
     setBusy(true);
     tracePanel.classList.remove('hidden');
-    tracePanel.textContent = '执行中…';
+    tracePanel.textContent = steering ? '改向执行中…' : '执行中…';
 
-    // 多轮：把已有 history 传给模型（不含本条，本条在 message）
-    const historyForModel = state.history.slice();
+    // 多轮：已有 history（不含本条）；过滤历史里无意义的「已停止」占位，避免模型困惑
+    const historyForModel = state.history
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .filter((m) => {
+        const c = String(m.content || '').trim();
+        return c && c !== '（已停止）' && c !== '[已停止]';
+      });
 
-    const result = await window.aihelper.chat({
-      message: text,
-      history: historyForModel,
-      sessionId: state.session?.id
-    });
+    const userPayload = steering
+      ? `【改向/继续】用户打断了上一轮未完成任务，请以本条为最新指令，结合已有工具结果与页面状态继续，不要重复已完成的步骤。\n\n${text}`
+      : text;
+
+    let result;
+    try {
+      result = await window.aihelper.chat({
+        message: userPayload,
+        history: historyForModel,
+        sessionId: state.session?.id
+      });
+    } catch (err) {
+      result = { ok: false, error: err.message || String(err) };
+    }
+
+    // 已被更新的一轮（又点了停止/又改向）→ 丢弃迟到结果
+    if (myRun !== state.runId) {
+      logUi('ui.chat_stale', { runId: myRun, current: state.runId });
+      return;
+    }
 
     setBusy(false);
 
@@ -751,16 +910,16 @@
       addMessage('assistant', result.content || '(空回复)');
       state.history.push({ role: 'user', content: text });
       state.history.push({ role: 'assistant', content: result.content || '' });
-      // 前端内存历史：仅当开启裁剪且轮数>0 时限制，否则不截
       const trim = !!state.config?.agent?.trimHistory;
       const mhKeep = Number(state.config?.agent?.maxHistoryTurns);
       if (trim && mhKeep > 0 && state.history.length > mhKeep * 2) {
         state.history = state.history.slice(-(mhKeep * 2));
       }
     } else if (result.cancelled || /已取消/.test(String(result.error || ''))) {
-      // 停止按钮已提示「任务已停止」，勿再刷一条错误
+      // 仅系统提示，不把「（已停止）」塞进模型 history（否则下一轮上下文脏）
+      addMessage('system', '本轮已中止。输入新内容直接发送即可继续。');
       state.history.push({ role: 'user', content: text });
-      state.history.push({ role: 'assistant', content: '（已停止）' });
+      // 不 push assistant 占位
     } else {
       addMessage('assistant', `错误: ${result.error}`, 'error');
       state.history.push({ role: 'user', content: text });
@@ -772,16 +931,20 @@
       state.session.uiMessages = collectUiMessages();
       state.dirty = true;
       updateSessionTitle();
-      // 每轮结束后立即落盘，避免关闭丢失
       await persistSession('回合结束');
     }
 
     if (result.trace?.length) {
       tracePanel.textContent = result.trace
-        .map((t, i) => `#${i + 1} ${t.name}(${JSON.stringify(t.args)}) => ${JSON.stringify(t.result).slice(0, 300)}`)
+        .map(
+          (t, i) =>
+            `#${i + 1} ${t.name}(${JSON.stringify(t.args)}) => ${JSON.stringify(t.result).slice(0, 300)}`
+        )
         .join('\n');
-    } else {
+    } else if (!(result.cancelled || /已取消/.test(String(result.error || '')))) {
       tracePanel.textContent = result.error || '无工具调用';
+    } else {
+      tracePanel.textContent = '已中止';
     }
   }
 
@@ -799,8 +962,16 @@
     } else if (ev.type === 'tool_end') {
       const preview = JSON.stringify(ev.error ? { error: ev.error } : ev.result).slice(0, 500);
       addMessage('tool', `← ${ev.name}: ${preview}`);
+      if (
+        ev.name === 'browser_record_start' ||
+        ev.name === 'browser_record_stop' ||
+        ev.name === 'browser_record_status'
+      ) {
+        refreshRecordStatus();
+      }
     } else if (ev.type === 'aborted') {
-      addMessage('system', '任务已停止');
+      // 停止/改向时 runId 已递增；这里只解锁 UI，避免重复刷「已停止」
+      if (!state.busy) return;
       setBusy(false);
       if (state.dirty) persistSession('中止');
     }
@@ -825,7 +996,7 @@
         if (!(sess.messages && sess.messages.length) && !(sess.uiMessages && sess.uiMessages.length)) {
           addMessage(
             'system',
-            '就绪。支持多轮对话；会话会定时/每轮自动写入文件。浏览器页面可保持，你可手动操作后再让助手继续。',
+            '就绪。多轮对话 · 运行中可直接输入改向 · 顶栏可「开始/停止录制」（红点=正在录，步数会变）。请先在配置里设工作区。',
             '',
             { skipPersist: true }
           );
