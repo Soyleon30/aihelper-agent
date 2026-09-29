@@ -40,6 +40,56 @@ const DEFAULT_EFFICIENCY_RULES = `
 7. 手册逐步执行：编号步骤（含「搜索框输入」）按序做；不要合并/跳过输入步。
 `.trim();
 
+/**
+ * 弱模型（Qwen3-30B-A3B 等）操作备忘：短、可执行、禁止跳步。
+ * 大模型（122B 等）也注入，因现场以 30B 为主；保持短以免挤占上下文。
+ */
+const WEAK_MODEL_PLAYBOOK = `
+【工具调用备忘 - 逐条照做，禁止跳步】
+A. 读手册：用户说按 md/手册 → 先 read_file 手册，再按编号步骤顺序执行；写「搜索框输入」的步骤必须 browser_type，禁止跳过。
+B. 输入：browser_type({ selector 或 placeholder, text, pressEnter:true })；看返回 matched/value；不对就换选择器重试。
+C. 点击：能写 selector/fid 就不要只用短 text。目标已确认则直接 click，少 evaluate 探路。
+D. Coremail 共享收件箱：browser_click({ fid:"1@1" }) 或 a[fid="1@1"]；禁止 text:"收件箱"。点后 URL 须含 1@1（不是 fid:1）。列表/读信优先 mail_list → mail_read。
+E. PAASIVU：应用运行管理 → type 应用名+回车 → 详情 → type 模板名(如 oa-sp-auth)+回车 → 详情 → Pod。两步搜索都要做。
+F. 失败：工具 error / FID_MISMATCH / CLICK_AMBIGUOUS / 输入未生效 → 换参数再试，最多 2 次，然后如实汇报；禁止说已成功。
+G. 回复：中文短句；只引用本轮工具 JSON 字段。
+`.trim();
+
+/** 模型名像小/中 MoE 时视为弱模型（默认收紧） */
+function isWeakModel(modelName) {
+  const m = String(modelName || '').toLowerCase();
+  if (!m) return true; // 未知则按弱模型
+  if (/122b|72b|70b|65b|67b|qwen3\.5-122|qwen2\.5-72|qwen2\.5-32/i.test(m)) {
+    return false;
+  }
+  if (/30b|32b|14b|7b|8b|9b|3b|4b|1\.5b|a3b|a14b|tiny|mini|small/i.test(m)) {
+    return true;
+  }
+  // Qwen3-30B-A3B 常见写法
+  if (/qwen3-30|qwen3\.5-30|qwen2\.5-14|qwen2\.5-7/i.test(m)) return true;
+  return true;
+}
+
+function buildTaskHint(userMessage) {
+  const s = String(userMessage || '');
+  const tips = [];
+  if (/PAASIVU|paasivu|取日志|查日志|oa-sp|bjfhoamsp|应用运行/i.test(s)) {
+    tips.push(
+      '本任务含 PAASIVU：严格 type 应用名 → 详情 → type 模板名 → 详情；搜索步不可省。'
+    );
+  }
+  if (/coremail|邮箱|收件箱|维护管理|邮件|fid\s*=?\s*1@1|1@1/i.test(s)) {
+    tips.push(
+      '本任务含 Coremail：共享箱只能 click fid:"1@1" 或 a[fid="1@1"]，禁止 text 收件箱；确认 URL 含 1@1。'
+    );
+  }
+  if (/手册|\.md|步骤/i.test(s)) {
+    tips.push('先 read_file 手册全文，再逐步工具执行，禁止凭记忆跳步。');
+  }
+  if (!tips.length) return '';
+  return '【本轮任务提示】\n' + tips.map((t, i) => `${i + 1}. ${t}`).join('\n');
+}
+
 const SUCCESS_CLAIM =
   /(已(经)?(成功|完成|打开|写入|删除|登录|提交|发送|读取|保存|创建|修改|下载|查看|列出)|成功(地)?(完成|打开|写入|登录|提交|读取)|文件内容[如下为是：:]|目录(如下|列表|包含)|邮件(如下|列表|内容)|发件人|收件人|主题[：:]|状态码\s*\d{3}|HTTP\s*\d{3}|登录成功|请求成功|根据我(的)?(检查|查看|了解)|我(已经|已)(帮你|为你)?(打开|读取|下载|发送|登录))/i;
 
@@ -125,6 +175,17 @@ function buildSystemPrompt(base, agentCfg = {}, runtime = {}) {
   if (agentCfg.antiHallucination !== false) {
     parts.push(agentCfg.antiHallucinationRules || DEFAULT_ANTI_HALLUCINATION_RULES);
   }
+  // 弱模型备忘：默认开；agent.weakModelPlaybook=false 可关；大模型也可 weakModelPlaybook=true 强制开
+  const model = runtime.model || agentCfg.model || '';
+  const playbookOpt = agentCfg.weakModelPlaybook;
+  const usePlaybook =
+    playbookOpt === true ||
+    (playbookOpt !== false && (isWeakModel(model) || !model));
+  if (usePlaybook) {
+    parts.push(agentCfg.weakModelPlaybookText || WEAK_MODEL_PLAYBOOK);
+  }
+  const taskHint = buildTaskHint(runtime.userMessage || '');
+  if (taskHint) parts.push(taskHint);
   // 仅在显式打开效率模式时附加，不替代反幻觉规则
   if (agentCfg.efficiencyMode === true) {
     parts.push(agentCfg.efficiencyRules || DEFAULT_EFFICIENCY_RULES);
@@ -396,8 +457,11 @@ function wrapFinalContent(content, opts = {}) {
 module.exports = {
   DEFAULT_ANTI_HALLUCINATION_RULES,
   DEFAULT_EFFICIENCY_RULES,
+  WEAK_MODEL_PLAYBOOK,
   buildWorkspaceRules,
   buildSystemPrompt,
+  isWeakModel,
+  buildTaskHint,
   looksLikeSuccessWithoutEvidence,
   looksLikeFabricatedResult,
   taskLikelyNeedsTools,

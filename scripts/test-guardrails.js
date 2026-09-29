@@ -101,8 +101,9 @@ ok(
   )
 );
 
-const prompt = g.buildSystemPrompt('基座', { antiHallucination: true });
+const prompt = g.buildSystemPrompt('基座', { antiHallucination: true }, { model: 'Qwen3-30B-A3B' });
 ok('buildSystemPrompt: 含强制规则', /必须先调用工具/.test(prompt));
+ok('buildSystemPrompt: 30B 含备忘', /工具调用备忘|fid:"1@1"|搜索框输入/.test(prompt));
 ok(
   'buildSystemPrompt: 效率默认关',
   !/减少轮次/.test(g.buildSystemPrompt('基座', { antiHallucination: true }))
@@ -111,6 +112,22 @@ ok(
   'buildSystemPrompt: 效率显式开',
   /减少轮次/.test(
     g.buildSystemPrompt('基座', { antiHallucination: true, efficiencyMode: true })
+  )
+);
+ok('isWeakModel: 30B', g.isWeakModel('Qwen3-30B-A3B') === true);
+ok('isWeakModel: 122B', g.isWeakModel('Qwen3.5-122B-A10B') === false);
+ok(
+  'buildTaskHint: coremail',
+  /1@1/.test(g.buildTaskHint('打开北京维护管理收件箱 fid=1@1'))
+);
+ok(
+  'buildSystemPrompt: 任务提示注入',
+  /本轮任务提示|PAASIVU/.test(
+    g.buildSystemPrompt(
+      '基座',
+      { antiHallucination: true },
+      { model: 'Qwen3-30B-A3B', userMessage: '按手册查 PAASIVU 日志' }
+    )
   )
 );
 

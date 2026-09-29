@@ -189,11 +189,17 @@ function createAgentService(options = {}) {
     const workspace = String(
       config.paths?.workspace || config.tools?.file?.workspace || ''
     ).trim();
+    const activeProvider = config.providers?.active || 'local';
+    const modelName =
+      (config.providers &&
+        config.providers[activeProvider] &&
+        config.providers[activeProvider].model) ||
+      '';
     const systemPrompt = buildSystemPrompt(
       ao.systemPrompt ||
-        '你是一个可操作本地文件与网页的智能助手。优先少轮次完成任务，用中文简短回答。',
+        '你是一个可操作本地文件与网页的智能助手。优先少轮次完成任务，用中文简短回答。工具失败须如实说明。',
       ao,
-      { workspace }
+      { workspace, model: modelName, userMessage }
     );
 
     // 历史：仅当开启裁剪且 maxHistoryTurns>0 时截断

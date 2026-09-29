@@ -6,6 +6,14 @@
 
 ---
 
+## [1.6.20] — 2026-09-29
+
+### 弱模型（Qwen3-30B-A3B 为主）操作备忘
+- 现场模型以 **Qwen3-30B-A3B** 为主、**Qwen3.5-122B** 为辅：30B 易跳搜索步、裸点「收件箱」
+- system 自动注入短 **WEAK_MODEL_PLAYBOOK**（30B/未知模型默认开；122B 类可关）
+- 用户消息含 PAASIVU/邮箱/手册 时追加 **本轮任务提示**（type 不可省、fid=1@1）
+- 配置：`agent.weakModelPlaybook` true/false；`weakModelPlaybookText` 可覆盖文案
+
 ## [1.6.19] — 2026-09-29
 
 ### Coremail 收件箱点错修复（fid=1@1）
