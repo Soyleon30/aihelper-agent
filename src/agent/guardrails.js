@@ -19,6 +19,9 @@ const DEFAULT_ANTI_HALLUCINATION_RULES = `
 13. 邮件仅支持本机 Coremail 客户端/已登录网页（非 IMAP/POP3）：mail_list / mail_search / mail_read 等。禁止声称已发送或删除邮件。
 14. 【禁止乱点】browser_click 的 text/selector 必须对应：用户原话里点名的控件，或本轮 browser_get_text/state 已确认存在的目标按钮。禁止把用户任务词（如「日志」「查询」「搜索」「下载」）当成导航菜单去点，除非用户明确说点该菜单。不确定先 browser_get_text，不要试探性乱点。
 15. 下载落盘：用户指定了文件名/目录时必须传 filename 或 path/dir；同名已存在应跳过并告知路径，不要 silent 改名成 file(1).ext（除非用户要求强制覆盖 force=true）。
+16. 【搜索/输入不可跳过】手册或用户写「搜索框输入 xxx / 在输入框填 xxx」时：必须调用 browser_type（text=xxx，clear 默认清空，列表搜索加 pressEnter:true 或 submitSearch:true）。禁止只 click「详情」而跳过 type。type 返回 matched:false 或 value 对不上时必须换 selector/placeholder 重试，禁止当成功继续。
+17. 【点击别犹豫】目标已在 get_text/state 中确认存在时，直接 browser_click(text 或 selector)，不要反复 get_text/evaluate 探路。下拉（如 Element el-dropdown）先 click 触发器文本，等菜单出现再 click 选项文本（如「500」），不要用未展开的 .el-select-dropdown__item:nth-child。
+18. PAASIVU 类流程：进入应用运行管理 → type 应用名+回车 → click 详情 → **再 type 模板名（如 oa-sp-auth）+回车** → click 详情 → Pod/容器。模板搜索与应用搜索是两步，缺一不可。
 `.trim();
 
 const DEFAULT_EFFICIENCY_RULES = `
@@ -26,9 +29,10 @@ const DEFAULT_EFFICIENCY_RULES = `
 1. 能一次完成的事不要拆成多轮：同一轮可并行调用多个工具。
 2. 拿到足够结果后立刻给出最终中文结论，不要再空转或重复调用相同工具。
 3. 浏览器流程尽量连贯：navigate →（必要时 wait）→ type/click → get_text/screenshot，少废话。
-4. 工具已返回 ok 的数据直接用，不要为了“再确认”重复读同一文件/同一页面。
+4. 工具已返回 ok 的数据直接用，不要为了“再确认”重复读同一文件/同一页面。但 **type 之后** 若下一步依赖筛选结果，可一次 get_text 确认列表已变，不可用“列表里好像已有”为由跳过 type。
 5. 失败一次后换参数或换思路；同一操作连续失败 2 次就停止并汇报。
 6. 最终回复要短：结论 + 关键证据字段即可。
+7. 手册逐步执行：编号步骤（含「搜索框输入」）按序做；不要合并/跳过输入步。
 `.trim();
 
 const SUCCESS_CLAIM =
@@ -75,9 +79,9 @@ function inferPreferredTools(userMessage) {
   if (/文件|目录|读取|写入|删除|列表/i.test(s)) {
     tips.push('list_dir / read_file / write_file');
   }
-  if (/网页|浏览器|登录|点击|截图|打开.*http/i.test(s)) {
+  if (/网页|浏览器|登录|点击|截图|打开.*http|PAASIVU|搜索框|输入/i.test(s)) {
     tips.push(
-      'browser_state → browser_get_text 确认控件 → 再 browser_click（text 须与用户指令一致，禁止点「日志/查询」等无关导航）'
+      'browser_state → 手册含「搜索框输入」必须 browser_type(text, pressEnter:true) 且校验 matched → browser_click；禁止跳过 type 直接点详情'
     );
   }
   if (/http|api|POST|GET|接口|请求/i.test(s)) {

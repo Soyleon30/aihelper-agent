@@ -16,6 +16,7 @@ function createBrowserToolHandlers(ctx) {
     maskText,
     ensurePage,
     robustClick,
+    robustType,
     looksLikeFileUrl,
     resolveDownloadUrl,
     clickAndCaptureDownload,
@@ -498,16 +499,33 @@ function createBrowserToolHandlers(ctx) {
     async browser_type(args) {
       return withStep('browser_type', args, async () => {
         const p = await ensurePage();
-        const loc = p.locator(args.selector).first();
-        if (args.clear) await loc.fill('');
-        await loc.fill(args.text);
-        if (args.pressEnter) await loc.press('Enter');
+        if (!args.selector && !args.placeholder && !args.label) {
+          throw new Error('需要提供 selector、placeholder 或 label');
+        }
+        const r = await (robustType || (async (page, a) => {
+          const loc = page.locator(a.selector).first();
+          if (a.clear !== false) await loc.fill('');
+          await loc.fill(a.text);
+          if (a.pressEnter) await loc.press('Enter');
+          return { ok: true, method: 'basic', value: a.text };
+        }))(p, args);
         bs.logAction('page.type.agent', {
-          selector: args.selector,
+          selector: r.selector || args.selector,
           text: maskText(args.text, args.selector),
-          pressEnter: !!args.pressEnter
+          pressEnter: !!(args.pressEnter || args.submitSearch),
+          via: r.via,
+          value: r.value,
+          matched: r.matched
         });
-        return { ok: true, url: p.url() };
+        return {
+          ok: true,
+          url: p.url(),
+          value: r.value,
+          matched: r.matched !== false,
+          via: r.via,
+          selector: r.selector || args.selector,
+          pressEnter: !!(args.pressEnter || args.submitSearch)
+        };
       });
     },
   
@@ -516,8 +534,23 @@ function createBrowserToolHandlers(ctx) {
         const p = await ensurePage();
         const results = [];
         for (const field of args.fields || []) {
-          await p.locator(field.selector).first().fill(String(field.value));
-          results.push({ selector: field.selector, ok: true });
+          if (robustType) {
+            const r = await robustType(p, {
+              selector: field.selector,
+              text: String(field.value),
+              clear: field.clear !== false,
+              pressEnter: !!field.pressEnter
+            });
+            results.push({
+              selector: r.selector || field.selector,
+              ok: true,
+              value: r.value,
+              matched: r.matched
+            });
+          } else {
+            await p.locator(field.selector).first().fill(String(field.value));
+            results.push({ selector: field.selector, ok: true });
+          }
           bs.logAction('page.fill.agent', {
             selector: field.selector,
             value: maskText(field.value, field.selector)

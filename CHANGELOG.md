@@ -6,6 +6,14 @@
 
 ---
 
+## [1.6.18] — 2026-09-29
+
+### 稳健输入 browser_type（修搜索框被跳过/假成功）
+- **根因**（目标机 logs）：`browser_type` 只对 `locator.first().fill`，15–40ms 即 ok，未等可见、未触发 Vue/Element `input`、不校验 value；模型常跳过「搜索框输入 oa-sp-auth」直接点详情
+- 新增 `src/tools/browser/type.js`：可见/弹层优先、默认清空、原生 value setter + InputEvent、失败则 `type` 逐字、**校验 value===text 否则报错**
+- 支持 `placeholder` / `label` / `submitSearch` / `pressEnter` / `clickSearchButton`；flow 回放共用 robustType
+- guardrails：手册「搜索框输入」不可跳过；type 后 matched 校验；PAASIVU 应用名与模板名两次搜索；下拉先点触发器再点选项，减少点击犹豫
+
 ## [1.6.17] — 2026-09-24
 
 ### 运行中可输入 + 发送即改向（steer）

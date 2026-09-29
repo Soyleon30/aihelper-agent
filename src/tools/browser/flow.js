@@ -9,6 +9,7 @@ const { resolveScreenshotDir } = require('./paths');
 function createFlowHelpers(ctx) {
   const { cfg, userDataPath } = ctx;
   const getRobustClick = () => ctx.robustClick;
+  const getRobustType = () => ctx.robustType;
 
   function flowsDir() {
     return path.join(userDataPath || process.cwd(), 'flows');
@@ -165,11 +166,32 @@ function createFlowHelpers(ctx) {
           });
           results.push({ i: idx, action: 'click', ok: true, method: r.method, url: p.url() });
         } else if (step.action === 'type') {
-          const loc = p.locator(step.selector).first();
-          if (step.clear !== false) await loc.fill('');
-          await loc.fill(String(step.text ?? ''));
-          if (step.pressEnter) await loc.press('Enter');
-          results.push({ i: idx, action: 'type', ok: true, url: p.url() });
+          const rt = getRobustType();
+          if (rt) {
+            const r = await rt(p, {
+              selector: step.selector,
+              placeholder: step.placeholder,
+              text: String(step.text ?? ''),
+              clear: step.clear !== false,
+              pressEnter: !!step.pressEnter,
+              submitSearch: !!step.submitSearch,
+              timeoutMs: step.timeoutMs || cfg.timeoutMs || 30000
+            });
+            results.push({
+              i: idx,
+              action: 'type',
+              ok: true,
+              via: r.via,
+              value: r.value,
+              url: p.url()
+            });
+          } else {
+            const loc = p.locator(step.selector).first();
+            if (step.clear !== false) await loc.fill('');
+            await loc.fill(String(step.text ?? ''));
+            if (step.pressEnter) await loc.press('Enter');
+            results.push({ i: idx, action: 'type', ok: true, url: p.url() });
+          }
         } else if (step.action === 'wait') {
           if (step.selector) {
             await p.waitForSelector(step.selector, {

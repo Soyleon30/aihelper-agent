@@ -466,16 +466,39 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'browser_type',
-      description: '在输入框中输入文字',
+      description:
+        '在输入框中输入文字（稳健：可见优先、默认清空、触发 Vue/Element input 事件并校验值）。搜索框务必 pressEnter:true 或 submitSearch:true。手册写「搜索框输入 xxx」时本步不可跳过。',
       parameters: {
         type: 'object',
         properties: {
-          selector: { type: 'string' },
+          selector: {
+            type: 'string',
+            description:
+              'CSS 选择器。Element 搜索框常用 input.el-input__inner 或 input[placeholder*="搜索"]'
+          },
+          placeholder: {
+            type: 'string',
+            description: '用 placeholder 片段定位（无可靠 selector 时）'
+          },
+          label: { type: 'string', description: 'aria-label / 邻近标签文本片段' },
           text: { type: 'string' },
-          clear: { type: 'boolean', description: '输入前是否清空' },
-          pressEnter: { type: 'boolean', description: '输入后是否回车' }
+          clear: { type: 'boolean', description: '输入前清空，默认 true' },
+          pressEnter: {
+            type: 'boolean',
+            description: '输入后回车；列表搜索框建议 true'
+          },
+          submitSearch: {
+            type: 'boolean',
+            description: '同 pressEnter，语义化为搜索提交'
+          },
+          clickSearchButton: {
+            type: 'boolean',
+            description: '回车后仍尝试点「搜索/查询」按钮'
+          },
+          afterMs: { type: 'number', description: '提交后等待列表刷新毫秒，默认约 600' },
+          timeoutMs: { type: 'number' }
         },
-        required: ['selector', 'text']
+        required: ['text']
       }
     }
   },

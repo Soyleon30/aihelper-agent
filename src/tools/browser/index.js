@@ -10,6 +10,7 @@
 const bs = require('../browser-session');
 const { resolveScreenshotDir } = require('./paths');
 const { createRobustClick } = require('./click');
+const { createRobustType } = require('./type');
 const { createDownloadHelpers } = require('./download');
 const { createFlowHelpers } = require('./flow');
 const { createLaunchHelpers } = require('./launch');
@@ -34,6 +35,7 @@ function createBrowserTools(options = {}) {
   };
 
   ctx.robustClick = createRobustClick(cfg);
+  ctx.robustType = createRobustType(cfg);
 
   const dl = createDownloadHelpers(ctx);
   Object.assign(ctx, dl);
