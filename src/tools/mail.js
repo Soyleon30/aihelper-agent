@@ -31,9 +31,11 @@ const DEFAULT_SELECTORS = {
   /** 搜索按钮 */
   searchButton:
     'button[type="submit"], .search-btn, [class*="search-btn"], a.search',
-  /** 收件箱入口 */
+  /** 收件箱入口：共享箱优先 fid=1@1，禁止裸 a:has-text("收件箱") 点到个人箱 */
   inboxLink:
-    'a[href*="inbox"], a[href*="INBOX"], [title*="收件箱"], a:has-text("收件箱"), .folder-inbox'
+    'a[fid="1@1"], a[fid=\'1@1\'], #mltree_15_a, a[href*="inbox"], a[href*="INBOX"], [title*="收件箱"], .folder-inbox',
+  /** 共享/指定邮箱收件箱 fid（Coremail XT5） */
+  sharedInboxFid: '1@1'
 };
 
 function createMailTools(options = {}) {
@@ -109,19 +111,70 @@ function createMailTools(options = {}) {
     return page;
   }
 
-  async function tryClickInbox(page) {
+  function parseFidFromUrl(url) {
+    try {
+      let u = String(url || '');
+      try {
+        const hash = u.includes('#') ? u.slice(u.indexOf('#') + 1) : u;
+        u = u + ' ' + decodeURIComponent(hash.replace(/\+/g, ' '));
+      } catch (_) {}
+      const m = u.match(/["']fid["']\s*:\s*["']([^"']+)["']/);
+      if (m) return m[1];
+      const m4 = u.match(/["']fid["']\s*:\s*(\d+)\b/);
+      if (m4) return m4[1];
+      const m2 = u.match(/%22fid%22%3A%22((?:[^%]|%[0-9A-Fa-f]{2})+?)%22/);
+      if (m2) {
+        try {
+          return decodeURIComponent(m2[1]);
+        } catch (_) {
+          return m2[1].replace(/%40/gi, '@');
+        }
+      }
+      const m3 = u.match(/%22fid%22%3A(\d+)(?:%7D|%2C|%22)/);
+      if (m3) return m3[1];
+    } catch (_) {}
+    return '';
+  }
+
+  async function tryClickInbox(page, opts = {}) {
     const sel = selectors();
-    const candidates = sel.inboxLink.split(',').map((s) => s.trim());
+    const wantFid = String(
+      opts.fid || cfg.sharedInboxFid || sel.sharedInboxFid || '1@1'
+    ).trim();
+    // 已在目标 fid 则跳过
+    const curFid = parseFidFromUrl(page.url());
+    if (curFid && curFid === wantFid) return { ok: true, already: true, fid: curFid };
+
+    // 1) 按 fid 属性（手册关键）
+    try {
+      const byFid = page.locator(`a[fid="${wantFid}"]`).first();
+      if ((await byFid.count()) > 0 && (await byFid.isVisible().catch(() => true))) {
+        await byFid.click({ timeout: 5000 });
+        await page.waitForTimeout(800);
+        const got = parseFidFromUrl(page.url());
+        if (!got || got === wantFid) return { ok: true, via: 'fid', fid: got || wantFid };
+      }
+    } catch (_) {}
+
+    // 2) 配置的 inboxLink（已去掉裸 has-text 收件箱）
+    const candidates = String(sel.inboxLink || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     for (const c of candidates) {
       try {
+        if (/has-text\(["']收件箱["']\)/.test(c)) continue; // 永不裸点收件箱
         if (c.includes(':has-text')) {
           const text = /:has-text\("([^"]+)"\)/.exec(c);
+          if (text && text[1] === '收件箱') continue;
           if (text) {
             const loc = page.getByText(text[1], { exact: false }).first();
             if (await loc.count()) {
               await loc.click({ timeout: 3000 });
               await page.waitForTimeout(800);
-              return true;
+              const got = parseFidFromUrl(page.url());
+              if (wantFid && got && got !== wantFid) continue;
+              return { ok: true, via: 'has-text', fid: got };
             }
           }
         } else {
@@ -129,12 +182,14 @@ function createMailTools(options = {}) {
           if ((await loc.count()) > 0) {
             await loc.click({ timeout: 3000 });
             await page.waitForTimeout(800);
-            return true;
+            const got = parseFidFromUrl(page.url());
+            if (wantFid && got && got !== wantFid) continue;
+            return { ok: true, via: 'selector', fid: got, selector: c };
           }
         }
       } catch (_) {}
     }
-    return false;
+    return { ok: false, error: `未能打开 fid=${wantFid} 收件箱` };
   }
 
   async function scrapeList(page, limit) {
@@ -345,20 +400,45 @@ function createMailTools(options = {}) {
       requireUiReady();
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 50);
       const page = await gotoMailHome();
-      if (args.folder && /收件箱|inbox/i.test(args.folder)) {
-        await tryClickInbox(page);
-      } else if (!args.folder) {
-        await tryClickInbox(page);
+      const wantFid = String(
+        args.fid || cfg.sharedInboxFid || selectors().sharedInboxFid || '1@1'
+      ).trim();
+      let inboxNav = null;
+      if (!args.folder || /收件箱|inbox/i.test(String(args.folder))) {
+        inboxNav = await tryClickInbox(page, { fid: wantFid });
       } else if (args.folder) {
         try {
-          await page.getByText(String(args.folder), { exact: false }).first().click({
-            timeout: 5000
-          });
-          await page.waitForTimeout(1000);
+          // 文件夹名勿用裸「收件箱」；共享箱走 fid
+          if (String(args.folder).trim() === '收件箱') {
+            inboxNav = await tryClickInbox(page, { fid: wantFid });
+          } else {
+            await page.getByText(String(args.folder), { exact: false }).first().click({
+              timeout: 5000
+            });
+            await page.waitForTimeout(1000);
+          }
         } catch (_) {}
       }
 
       await page.waitForTimeout(600);
+      const url = page.url();
+      const fid = parseFidFromUrl(url);
+      if (wantFid && fid && fid !== wantFid) {
+        log('mail.list', { count: 0, url, fid, wantFid, warn: 'fid_mismatch' });
+        return {
+          ok: false,
+          mode: 'client_ui',
+          folder: args.folder || '收件箱',
+          count: 0,
+          url,
+          fid,
+          expectFid: wantFid,
+          error: `当前 fid=${fid}，不是共享收件箱 ${wantFid}。请 browser_click({ fid:"${wantFid}" })`,
+          messages: [],
+          inboxNav
+        };
+      }
+
       let messages = await scrapeList(page, limit);
       if (args.unseenOnly === true) {
         messages = messages.filter(
@@ -368,18 +448,20 @@ function createMailTools(options = {}) {
         );
       }
 
-      log('mail.list', { count: messages.length, url: page.url() });
+      log('mail.list', { count: messages.length, url, fid: fid || wantFid });
       return {
         ok: true,
         mode: 'client_ui',
         folder: args.folder || '收件箱',
         count: messages.length,
-        url: page.url(),
+        url,
+        fid: fid || wantFid,
+        inboxNav,
         messages,
         message:
           messages.length
             ? '来自本机 Coremail 界面列表（非 IMAP）。读信请用 mail_read，id 或 index 任选其一。'
-            : '未解析到邮件行。请确认已登录且在收件箱；可在配置中调整 selectors.listRows'
+            : '未解析到邮件行。请确认已登录且在 fid=1@1 收件箱；可 browser_click({fid:"1@1"})'
       };
     },
 

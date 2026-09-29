@@ -62,6 +62,27 @@ ok(
     '点一下'
   ) == null
 );
+ok(
+  'checkSpuriousBrowserClick: 裸收件箱拦截',
+  g.checkSpuriousBrowserClick('browser_click', { text: '收件箱' }, '打开维护管理邮件') !=
+    null
+);
+ok(
+  'checkSpuriousBrowserClick: fid=1@1 放行',
+  g.checkSpuriousBrowserClick(
+    'browser_click',
+    { fid: '1@1', text: '收件箱' },
+    '打开收件箱'
+  ) == null
+);
+ok(
+  'checkSpuriousBrowserClick: a[fid] 放行',
+  g.checkSpuriousBrowserClick(
+    'browser_click',
+    { selector: 'a[fid="1@1"]' },
+    '打开收件箱'
+  ) == null
+);
 
 ok(
   'isDuplicateToolCall: 重复',

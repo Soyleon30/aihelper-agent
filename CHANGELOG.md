@@ -6,6 +6,15 @@
 
 ---
 
+## [1.6.19] — 2026-09-29
+
+### Coremail 收件箱点错修复（fid=1@1）
+- **根因**（9/23–24 logs + 手册）：`browser_click(text:"收件箱")` 命中个人箱 `#mltree_1_a`（URL `fid:1`），而非共享箱 `a[fid="1@1"]` / `#mltree_15_a`
+- `browser_click` 支持 `fid` / `attr` / `within` / `expectFid`；多同名「收件箱」无 fid 时 **CLICK_AMBIGUOUS** 拒绝 first()
+- 点击后校验 URL fid；不符抛 **FID_MISMATCH**
+- guardrails 拦截裸 `text:"收件箱"`，强制 `fid:"1@1"`
+- `mail_list` / `tryClickInbox` 默认进 `1@1`，去掉裸 has-text 收件箱
+
 ## [1.6.18] — 2026-09-29
 
 ### 稳健输入 browser_type（修搜索框被跳过/假成功）

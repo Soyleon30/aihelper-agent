@@ -278,14 +278,36 @@ const TOOL_DEFINITIONS = [
     function: {
       name: 'browser_click',
       description:
-        '点击页面元素（CSS 选择器或文本）。text/selector 必须来自用户指令或本轮 browser_get_text 看到的真实控件，禁止瞎点导航栏「日志」「查询」「首页」等。下载优先 browser_download；waitDownload=true 可等落盘，并可传 filename/path/dir。',
+        '点击页面元素。Coremail 共享收件箱必须用 fid:"1@1" 或 selector:\'a[fid="1@1"]\'/#mltree_15_a，禁止只用 text:"收件箱"（会点到个人箱 fid=1）。多同名节点会报歧义。expectFid 可校验 URL。下载优先 browser_download。',
       parameters: {
         type: 'object',
         properties: {
-          selector: { type: 'string', description: 'CSS 选择器' },
+          selector: {
+            type: 'string',
+            description: 'CSS 选择器，如 a[fid="1@1"]、#mltree_15_a'
+          },
           text: {
             type: 'string',
-            description: '可见文本（与 selector 二选一）；须与用户要操作的按钮一致，勿用无关词'
+            description:
+              '可见文本；多同名时必须配合 fid/selector。禁止单独 text=收件箱 点共享邮箱'
+          },
+          fid: {
+            type: 'string',
+            description:
+              'Coremail 树节点 fid，如共享收件箱 "1@1"（不是数字 1）。优先于纯 text'
+          },
+          attr: {
+            type: 'object',
+            description: '按 HTML 属性定位，如 {"fid":"1@1"}'
+          },
+          within: {
+            type: 'string',
+            description: '父级选择器作用域，如 #mltree_14_ul（共享邮箱子树）'
+          },
+          exact: { type: 'boolean', description: 'text 精确匹配' },
+          expectFid: {
+            type: 'string',
+            description: '点击后校验 URL hash 中 fid（默认等于 fid 参数）'
           },
           timeoutMs: { type: 'number' },
           force: {

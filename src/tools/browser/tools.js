@@ -135,12 +135,19 @@ function createBrowserToolHandlers(ctx) {
         }
         const r = await robustClick(p, args);
         const out = {
-          ok: true,
+          ok: r.ok !== false,
           method: r.method,
           via: r.via,
-          url: p.url(),
-          title: await p.title().catch(() => '')
+          url: r.url || p.url(),
+          title: await p.title().catch(() => ''),
+          fid: r.fid != null ? r.fid : undefined,
+          expectFid: r.expectFid || args.expectFid || args.fid || undefined,
+          fidCheck: r.fidCheck
         };
+        if (r.error) {
+          out.error = r.error;
+          out.hint = r.hint;
+        }
         if (waitDl) {
           const settled = await waitDownloadSettled({
             timeoutMs: dlTimeout,
@@ -162,8 +169,10 @@ function createBrowserToolHandlers(ctx) {
         bs.logAction('page.click.agent', {
           selector: args.selector,
           text: args.text,
+          fid: args.fid || (args.attr && args.attr.fid),
           method: r.method,
           url: out.url,
+          resultFid: out.fid,
           download: out.download || null
         });
         return out;

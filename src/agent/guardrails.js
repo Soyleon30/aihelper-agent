@@ -22,6 +22,11 @@ const DEFAULT_ANTI_HALLUCINATION_RULES = `
 16. 【搜索/输入不可跳过】手册或用户写「搜索框输入 xxx / 在输入框填 xxx」时：必须调用 browser_type（text=xxx，clear 默认清空，列表搜索加 pressEnter:true 或 submitSearch:true）。禁止只 click「详情」而跳过 type。type 返回 matched:false 或 value 对不上时必须换 selector/placeholder 重试，禁止当成功继续。
 17. 【点击别犹豫】目标已在 get_text/state 中确认存在时，直接 browser_click(text 或 selector)，不要反复 get_text/evaluate 探路。下拉（如 Element el-dropdown）先 click 触发器文本，等菜单出现再 click 选项文本（如「500」），不要用未展开的 .el-select-dropdown__item:nth-child。
 18. PAASIVU 类流程：进入应用运行管理 → type 应用名+回车 → click 详情 → **再 type 模板名（如 oa-sp-auth）+回车** → click 详情 → Pod/容器。模板搜索与应用搜索是两步，缺一不可。
+19. 【Coremail 共享收件箱】手册目标 fid 为 **1@1**（北京维护管理等共享邮箱），不是个人收件箱 fid=1。
+    - **禁止** browser_click(text:"收件箱") / text 仅「收件箱」——会命中 #mltree_1_a（个人箱）。
+    - **必须** browser_click({ fid:"1@1" }) 或 selector:'a[fid="1@1"]' 或 #mltree_15_a（以当前 DOM 为准）；可先 within 父邮箱节点再点。
+    - 点后用 browser_state 看 URL 是否含 "fid":"1@1"（编码为 1%401）。若是 "fid":1 则点错，立即按 fid 重点。
+    - 读信优先 mail_list / mail_read；必须先确保已在 fid=1@1 列表。
 `.trim();
 
 const DEFAULT_EFFICIENCY_RULES = `
@@ -68,8 +73,10 @@ function taskLikelyNeedsTools(userMessage) {
 function inferPreferredTools(userMessage) {
   const s = String(userMessage || '');
   const tips = [];
-  if (/邮件|邮箱|收件箱|未读|imap|coremail|mail/i.test(s)) {
-    tips.push('mail_list / mail_search / mail_read / mail_test');
+  if (/邮件|邮箱|收件箱|未读|imap|coremail|mail|维护管理|fid/i.test(s)) {
+    tips.push(
+      'Coremail 共享箱：browser_click({fid:"1@1"}) 或 a[fid="1@1"]，禁止 text=收件箱；mail_list/mail_read；点后确认 URL 含 fid 1@1'
+    );
   }
   if (/下载|md\b|markdown|\.pdf|\.zip/i.test(s)) {
     tips.push(
@@ -256,6 +263,31 @@ const SPURIOUS_CLICK_TEXTS = [
 function checkSpuriousBrowserClick(name, args, userMessage) {
   if (name !== 'browser_click' && name !== 'browser_download') return null;
   const text = String((args && args.text) || '').trim();
+  const selector = String((args && args.selector) || '').trim();
+  const fid = args && (args.fid != null ? String(args.fid) : args.attr && args.attr.fid);
+  const msg = String(userMessage || '');
+
+  // Coremail：裸点「收件箱」且无 fid/精确 selector → 拦截（日志里反复点到 mltree_1_a / fid=1）
+  const inboxBare =
+    text === '收件箱' ||
+    text === '草稿箱' ||
+    /^收件箱\s*$/.test(text);
+  const hasFidHint =
+    (fid != null && String(fid).trim() !== '') ||
+    /fid\s*=/.test(selector) ||
+    /#mltree_\d+_a/i.test(selector) ||
+    (args && args.within);
+  if (name === 'browser_click' && inboxBare && !hasFidHint) {
+    return {
+      ok: false,
+      error: 'coremail_inbox_ambiguous',
+      blockedText: text || selector,
+      hint:
+        '已拦截：禁止只用 text「收件箱」。共享邮箱收件箱请 browser_click({ fid:"1@1" }) 或 selector:\'a[fid="1@1"]\'（见手册 fid=1@1）。' +
+        '点后 browser_state 确认 URL 含 "fid":"1@1"，不是 "fid":1。'
+    };
+  }
+
   if (!text) return null;
   // 只拦短、像菜单的纯文本；长文案（用户可能复制的按钮全文）放行
   if (text.length > 12) return null;
@@ -264,10 +296,8 @@ function checkSpuriousBrowserClick(name, args, userMessage) {
     (t) => t === text || t.toLowerCase() === lower
   );
   if (!hit) return null;
-  const msg = String(userMessage || '');
   // 用户原话包含该词（或明显点名）则放行
   if (msg.includes(text) || msg.toLowerCase().includes(lower)) return null;
-  // 用户明确说「点/点击/打开 xxx」且 xxx 与 text 接近也放行（上面 includes 已覆盖）
   return {
     ok: false,
     error: 'spurious_click_blocked',
