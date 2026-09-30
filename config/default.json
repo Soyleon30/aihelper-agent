@@ -1,6 +1,7 @@
 {
   "providers": {
     "active": "local",
+    "modelHistory": ["qwen2.5:7b", "gpt-4o-mini", "default"],
     "local": {
       "name": "本地模型",
       "baseUrl": "http://127.0.0.1:11434/v1",

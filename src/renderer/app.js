@@ -193,6 +193,42 @@
     return $('cfgActiveProvider').value;
   }
 
+  const MODEL_HISTORY_MAX = 30;
+
+  function getModelHistory() {
+    const p = state.config.providers || {};
+    const list = Array.isArray(p.modelHistory) ? p.modelHistory.slice() : [];
+    for (const key of ['local', 'openai', 'custom']) {
+      const m = (p[key] && p[key].model) || '';
+      if (m && !list.includes(m)) list.push(m);
+    }
+    return list;
+  }
+
+  function rememberModel(name) {
+    const m = (name || '').trim();
+    if (!m) return;
+    state.config.providers = state.config.providers || {};
+    let list = Array.isArray(state.config.providers.modelHistory)
+      ? state.config.providers.modelHistory.slice()
+      : [];
+    list = list.filter((x) => x !== m);
+    list.unshift(m);
+    if (list.length > MODEL_HISTORY_MAX) list = list.slice(0, MODEL_HISTORY_MAX);
+    state.config.providers.modelHistory = list;
+  }
+
+  function refreshModelHistoryList() {
+    const dl = $('modelHistoryList');
+    if (!dl) return;
+    dl.innerHTML = '';
+    for (const m of getModelHistory()) {
+      const opt = document.createElement('option');
+      opt.value = m;
+      dl.appendChild(opt);
+    }
+  }
+
   function fillProviderFields(key) {
     const p = state.config.providers[key];
     if (!p) return;
@@ -203,6 +239,7 @@
     $('cfgTemperature').value = p.temperature ?? 0.3;
     $('cfgMaxTokens').value = p.maxTokens ?? 4096;
     $('cfgTimeout').value = p.timeoutMs ?? 120000;
+    refreshModelHistoryList();
   }
 
   function readProviderFieldsIntoConfig() {
@@ -217,12 +254,15 @@
     p.timeoutMs = Number($('cfgTimeout').value);
     state.config.providers[key] = p;
     state.config.providers.active = key;
+    rememberModel(p.model);
+    refreshModelHistoryList();
   }
 
   function fillConfigForm() {
     const c = state.config;
     $('cfgActiveProvider').value = c.providers.active || 'local';
     fillProviderFields($('cfgActiveProvider').value);
+    refreshModelHistoryList();
     $('cfgSystemPrompt').value = c.agent?.systemPrompt || '';
     $('cfgMaxRounds').value =
       c.agent?.maxToolRounds === undefined || c.agent?.maxToolRounds === null
