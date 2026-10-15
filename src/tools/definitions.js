@@ -641,6 +641,51 @@ const TOOL_DEFINITIONS = [
       description: '关闭当前浏览器会话',
       parameters: { type: 'object', properties: {} }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_excel',
+      description: '读取本地 Excel 文件（.xlsx/.xls），可指定工作表名，返回 JSON 数组数据。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Excel 文件绝对路径或相对工作区路径' },
+          sheet: { type: 'string', description: '工作表名称（如 Sheet1），为空则使用第一个' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_excel',
+      description: '写入数据到 Excel 文件（覆盖或创建新文件），数据为二维数组。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '保存路径' },
+          data: { type: 'array', items: { type: 'array' }, description: '二维数组，每行一数组' },
+          sheet: { type: 'string', description: '工作表名称，默认 Sheet1' }
+        },
+        required: ['path', 'data']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_sheets',
+      description: '列出 Excel 文件中的所有工作表名称。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Excel 文件路径' }
+        },
+        required: ['path']
+      }
+    }
   }
 ];
 

@@ -1,5 +1,8 @@
 # 变更日志
 
+### 1.6.22 (2026-10-15)
+- 增加 Excel 汇总工具：`read_excel`、`write_excel`、`list_sheets`（使用 xlsx 库）
+
 本文件记录 AIHelper Agent 从立项到当前的功能与行为变更（按时间大致倒序，同一版本内按主题归类）。
 
 版本号规则见 `AGENTS.md`：每次实质改动 commit 前 bump `package.json` version，并在此追加条目。

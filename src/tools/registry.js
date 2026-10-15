@@ -4,6 +4,7 @@ const { createHttpTools } = require('./http');
 const { createBrowserTools } = require('./browser');
 const { createDownloadTools } = require('./download');
 const { createMailTools } = require('./mail');
+const { read_excel, write_excel, list_sheets } = require('./excel');
 const browserSession = require('./browser-session');
 
 function createToolRegistry(options = {}) {
@@ -69,6 +70,11 @@ function createToolRegistry(options = {}) {
         logger: options.logger || null
       })
     );
+  }
+  if (toolsCfg.excel?.enabled !== false) {
+    handlers.read_excel = read_excel;
+    handlers.write_excel = write_excel;
+    handlers.list_sheets = list_sheets;
   }
 
   function getDefinitions() {
