@@ -103,7 +103,7 @@ npm run pack:offline    # → offline-cache/
 - **浏览器**: `browser_state` `browser_navigate` `browser_click` `browser_type` `browser_fill_form` `browser_get_text` `browser_get_html` `browser_screenshot` `get_screenshot_dir` `browser_wait` `browser_evaluate` `browser_close`
 - **浏览器下载**: `browser_resolve_download_url` `browser_download` `browser_wait_download` `browser_list_downloads`
 - **录制回放**: `browser_record_start` `browser_record_stop` `browser_record_status` `browser_flow_list` `browser_flow_run`
-- **Excel**: `read_excel` `write_excel` `list_sheets`
+- **Excel**: `list_sheets` `read_excel` `write_excel` `excel_summary` `excel_merge`
 
 可在配置中关闭某类工具，或限制文件允许根目录。完整参数见应用内「工具说明」与 `src/tools/definitions.js`。
 

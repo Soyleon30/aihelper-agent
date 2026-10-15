@@ -1,7 +1,11 @@
 # 变更日志
 
-### 1.6.22 (2026-10-15)
-- 增加 Excel 汇总工具：`read_excel`、`write_excel`、`list_sheets`（使用 xlsx 库）
+## [1.6.22] — 2026-10-15
+
+### Excel 读写与汇总
+- 新增工具：`list_sheets` `read_excel` `write_excel` `excel_summary` `excel_merge`
+- 支持读表头对象、写二维/对象数组、列统计与 groupBy 聚合、多文件合并
+- 依赖 `xlsx`；路径与文件工具共用 workspace / allowedRoots
 
 本文件记录 AIHelper Agent 从立项到当前的功能与行为变更（按时间大致倒序，同一版本内按主题归类）。
 

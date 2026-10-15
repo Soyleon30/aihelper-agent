@@ -83,6 +83,11 @@
       "folder": "收件箱",
       "selectors": {}
     },
+    "excel": {
+      "enabled": true,
+      "maxRows": 5000,
+      "maxCells": 200000
+    },
     "browser": {
       "enabled": true,
       "headless": false,

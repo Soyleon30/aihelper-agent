@@ -4,7 +4,7 @@ const { createHttpTools } = require('./http');
 const { createBrowserTools } = require('./browser');
 const { createDownloadTools } = require('./download');
 const { createMailTools } = require('./mail');
-const { read_excel, write_excel, list_sheets } = require('./excel');
+const { createExcelTools } = require('./excel');
 const browserSession = require('./browser-session');
 
 function createToolRegistry(options = {}) {
@@ -17,11 +17,12 @@ function createToolRegistry(options = {}) {
     dir: (toolsCfg.download && toolsCfg.download.dir) || pathsConfig.downloadDir || ''
   };
 
+  const workspace =
+    (pathsConfig && pathsConfig.workspace) ||
+    (toolsCfg.file && toolsCfg.file.workspace) ||
+    '';
+
   if (toolsCfg.file?.enabled !== false) {
-    const workspace =
-      (pathsConfig && pathsConfig.workspace) ||
-      (toolsCfg.file && toolsCfg.file.workspace) ||
-      '';
     Object.assign(
       handlers,
       createFileTools({
@@ -72,9 +73,20 @@ function createToolRegistry(options = {}) {
     );
   }
   if (toolsCfg.excel?.enabled !== false) {
-    handlers.read_excel = read_excel;
-    handlers.write_excel = write_excel;
-    handlers.list_sheets = list_sheets;
+    Object.assign(
+      handlers,
+      createExcelTools({
+        config: {
+          ...(toolsCfg.excel || {}),
+          allowedRoots:
+            (toolsCfg.excel && toolsCfg.excel.allowedRoots) ||
+            (toolsCfg.file && toolsCfg.file.allowedRoots) ||
+            [],
+          workspace
+        },
+        workspace
+      })
+    );
   }
 
   function getDefinitions() {
@@ -90,7 +102,6 @@ function createToolRegistry(options = {}) {
     }
     const fn = handlers[name];
     if (!fn) throw new Error(`未知工具: ${name}`);
-    // 所有工具都与停止标志竞态（HTTP/下载/浏览器）
     return browserSession.raceAbort(Promise.resolve().then(() => fn(args || {})));
   }
 
@@ -108,7 +119,6 @@ function createToolRegistry(options = {}) {
   }
 
   async function shutdown(opts = {}) {
-    // 默认 keep browser session；仅 force 时真正关闭
     if (opts.force && handlers._forceShutdown) {
       await handlers._forceShutdown();
       return;

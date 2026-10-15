@@ -645,13 +645,31 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
-      name: 'read_excel',
-      description: '读取本地 Excel 文件（.xlsx/.xls），可指定工作表名，返回 JSON 数组数据。',
+      name: 'list_sheets',
+      description: '列出 Excel（.xlsx/.xls）中的工作表名称与索引。相对路径相对 workspace。',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Excel 文件绝对路径或相对工作区路径' },
-          sheet: { type: 'string', description: '工作表名称（如 Sheet1），为空则使用第一个' }
+          path: { type: 'string', description: 'Excel 文件路径' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_excel',
+      description:
+        '读取 Excel 工作表。默认按首行表头返回对象数组；asObjects:false 返回二维矩阵。可用于汇总前取数。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Excel 路径（相对=工作区）' },
+          sheet: { type: 'string', description: '工作表名或索引，默认第一个' },
+          headerRow: { type: 'number', description: '表头行索引，默认 0' },
+          asObjects: { type: 'boolean', description: '默认 true：对象数组；false=二维数组' },
+          maxRows: { type: 'number', description: '最大读取行数' }
         },
         required: ['path']
       }
@@ -661,13 +679,20 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'write_excel',
-      description: '写入数据到 Excel 文件（覆盖或创建新文件），数据为二维数组。',
+      description:
+        '写入/创建 Excel。data 为二维数组或对象数组（可配 headers）。appendSheet:true 时往已有文件追加工作表。',
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: '保存路径' },
-          data: { type: 'array', items: { type: 'array' }, description: '二维数组，每行一数组' },
-          sheet: { type: 'string', description: '工作表名称，默认 Sheet1' }
+          data: {
+            type: 'array',
+            description: '二维数组 [[...],...] 或对象数组 [{col:val},...]'
+          },
+          headers: { type: 'array', items: { type: 'string' }, description: '对象数组时的列顺序' },
+          sheet: { type: 'string', description: '工作表名，默认 Sheet1' },
+          appendSheet: { type: 'boolean', description: 'true=追加到已有文件' },
+          overwriteSheet: { type: 'boolean', description: '同名表是否覆盖，默认 true' }
         },
         required: ['path', 'data']
       }
@@ -676,14 +701,52 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
-      name: 'list_sheets',
-      description: '列出 Excel 文件中的所有工作表名称。',
+      name: 'excel_summary',
+      description:
+        'Excel 汇总：各列 count/sum/avg/min/max/unique；可 groupBy + metrics 做分组聚合（如按部门求和）。',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Excel 文件路径' }
+          path: { type: 'string' },
+          sheet: { type: 'string' },
+          headerRow: { type: 'number' },
+          columns: { type: 'array', items: { type: 'string' }, description: '只统计这些列' },
+          groupBy: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '分组列，如 ["部门","月份"]'
+          },
+          metrics: {
+            type: 'array',
+            description: '聚合项，如 [{"column":"金额","op":"sum","as":"总金额"}]，op=sum|avg|min|max|count|unique',
+            items: { type: 'object' }
+          },
+          sortBy: { type: 'string', description: '分组结果排序字段' },
+          sortDesc: { type: 'boolean', description: '默认 true 降序' },
+          topN: { type: 'number', description: '只返回前 N 组' },
+          maxRows: { type: 'number' }
         },
         required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'excel_merge',
+      description:
+        '合并多个 Excel 为同一张表并写出。默认增加 _source 列标记来源文件名。适合多表汇总。',
+      parameters: {
+        type: 'object',
+        properties: {
+          paths: { type: 'array', items: { type: 'string' }, description: '源 Excel 路径列表' },
+          output: { type: 'string', description: '输出 xlsx 路径' },
+          sheet: { type: 'string', description: '输出表名，默认 汇总' },
+          sourceSheet: { type: 'string', description: '各文件读取的工作表，默认第一个' },
+          headerRow: { type: 'number' },
+          addSource: { type: 'boolean', description: '是否加 _source 列，默认 true' }
+        },
+        required: ['paths', 'output']
       }
     }
   }

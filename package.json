@@ -1,6 +1,6 @@
 {
   "name": "aihelper-agent",
-    "version": "1.6.22",
+  "version": "1.6.22",
   "description": "离线可用的 AI Agent：本地/API 模型、文件与网页自动化",
   "main": "electron/main.js",
   "author": "AI Helper",
@@ -22,7 +22,8 @@
     "electron-store": "^8.2.0",
     "node-fetch": "^2.7.0",
     "playwright": "^1.49.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "electron": "^33.2.0",
