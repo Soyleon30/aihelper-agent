@@ -23,3 +23,7 @@
 - Electron 桌面 Agent：本地/API 模型、文件/HTTP/下载/浏览器/Coremail 只读邮件。
 - 离线包：`npx electron-builder --win --dir` + `node scripts/assemble-offline.js`。
 - 用户配置在 `%APPDATA%` 下，勿把真实密码写进仓库。
+
+## 里程碑
+
+- **首次可用**：`1.6.24`（2026-10-28），tag `v1.6.24` / `first-usable`。下载定名与同名避让可用后再标此基线。
