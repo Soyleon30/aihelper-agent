@@ -124,6 +124,7 @@ function createBrowserToolHandlers(ctx) {
         let pendingSave = null;
         if (waitDl) {
           // force 只给 Playwright 点击，绝不传给下载覆盖
+          // setPending 默认替换队列，清掉上轮未消费的 filename，避免本轮第一个文件沿用旧名
           pendingSave = {
             filename: args.filename,
             path: args.path,

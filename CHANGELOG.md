@@ -1,5 +1,13 @@
 # 变更日志
 
+## [1.6.24] — 2026-10-28
+
+### 下载：本轮第一个文件不再沿用上轮文件名
+- **根因**：未消费的旧 `pending.filename` 仍在队列头；orphan promote 用 `preferredName` 强行当最终名；`recent-after-promote` 未限本轮时间可能返回上轮记录
+- `setPendingDownloadSave` 默认**替换**队列（`append:true` 才追加）
+- 仅用户显式 `filename`/`path` 才覆盖浏览器建议名；staging 临时名 `*-dl` 不当最终名
+- `recent-after-promote` 只认 `at >= sinceMs` 的本轮记录
+
 ## [1.6.23] — 2026-10-28
 
 ### 下载落盘：完成后再定名 + 禁止静默覆盖

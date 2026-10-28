@@ -134,15 +134,40 @@ function pathKey(p) {
   return process.platform === 'win32' ? s.toLowerCase() : s;
 }
 
+/**
+ * 设置本次下载落盘选项。
+ * 默认**替换**队列（丢掉未消费的旧 pending），避免「本轮第一个文件沿用上轮文件名」。
+ * opts.append === true 时才追加（同一次操作连续多个下载）。
+ */
 function setPendingDownloadSave(opts) {
-  const o = opts && typeof opts === 'object' ? { ...opts } : null;
   if (!Array.isArray(shared.pendingDownloadQueue)) shared.pendingDownloadQueue = [];
-  if (o) {
-    shared.pendingDownloadQueue.push(o);
-    shared.pendingDownloadSave = o;
-  } else {
+  if (opts == null) {
+    shared.pendingDownloadQueue = [];
     shared.pendingDownloadSave = null;
+    return;
   }
+  if (typeof opts !== 'object') return;
+  const append = opts.append === true;
+  // 不把 append 标志写入 pending 本体
+  const o = { ...opts };
+  delete o.append;
+  // 去掉空 filename，避免 undefined 被当成「有指定」
+  if (o.filename != null && !String(o.filename).trim()) delete o.filename;
+  if (o.path != null && !String(o.path).trim()) delete o.path;
+  if (o.dir != null && !String(o.dir).trim()) delete o.dir;
+  if (o.saveDir != null && !String(o.saveDir).trim()) delete o.saveDir;
+
+  if (!append) {
+    shared.pendingDownloadQueue = [o];
+  } else {
+    shared.pendingDownloadQueue.push(o);
+  }
+  shared.pendingDownloadSave = shared.pendingDownloadQueue[0] || null;
+}
+
+function clearPendingDownloadSave() {
+  shared.pendingDownloadQueue = [];
+  shared.pendingDownloadSave = null;
 }
 
 function takePendingDownloadSave() {
@@ -162,6 +187,14 @@ function peekPendingDownloadSave() {
     return shared.pendingDownloadQueue[0];
   }
   return shared.pendingDownloadSave;
+}
+
+/** 用户是否显式指定了保存名/路径（仅此时才覆盖浏览器建议名） */
+function pendingHasExplicitName(pending) {
+  const p = pending || {};
+  if (p.filename != null && String(p.filename).trim()) return true;
+  if (p.path != null && String(p.path).trim()) return true;
+  return false;
 }
 
 /** 登记「正在写入」的最终路径，供后续下载避让 */
@@ -573,8 +606,10 @@ module.exports = {
   closeAll,
   pushDownloadRecord,
   setPendingDownloadSave,
+  clearPendingDownloadSave,
   takePendingDownloadSave,
   peekPendingDownloadSave,
+  pendingHasExplicitName,
   reserveFinalPath,
   releaseFinalPath,
   getReservedFinalPaths,

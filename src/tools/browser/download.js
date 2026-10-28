@@ -28,6 +28,11 @@ function createDownloadHelpers(ctx) {
     return 12000;
   }
 
+  /** staging 临时名：时间戳-hex-dl，不能当最终文件名 */
+  function looksLikeStageTmpName(name) {
+    return /^\d{10,}-[0-9a-f]{6,}-dl$/i.test(String(name || ''));
+  }
+
   function incomingDir(dlRoot) {
     const d = resolveIncomingDir(dlRoot);
     ensureDir(d);
@@ -86,8 +91,15 @@ function createDownloadHelpers(ctx) {
     const dlRoot = resolveBrowserDownloadDir(cfg, userDataPath);
     const stageRoot = incomingDir(dlRoot);
     const timeoutMs = Math.max(800, Number(opts.timeoutMs) || defaultDlWaitMs());
-    const pending = opts.pending || bs.peekPendingDownloadSave() || {};
-    const preferredName = opts.preferredName || pending.filename || '';
+    // 优先调用方传入的 pending（本轮），不要默默吃队列里可能过期的 peek
+    const pending =
+      opts.pending && typeof opts.pending === 'object'
+        ? opts.pending
+        : bs.peekPendingDownloadSave() || {};
+    // preferredName 仅用于在 staging 里找文件；未显式指定则不要沿用旧 filename
+    const preferredName = bs.pendingHasExplicitName(pending)
+      ? String(opts.preferredName || pending.filename || '').trim()
+      : String(opts.preferredName || '').trim();
     const t0 = Date.now();
     const sinceMs = t0 - 2000;
 
@@ -132,10 +144,16 @@ function createDownloadHelpers(ctx) {
         if (waiterDone && waited && (waited.ok || waited.skipped) && waited.path) {
           return { ok: true, saved: waited, via: 'playwright-record' };
         }
-        // 文件可能已被 onDownload promote 走；再扫一次
+        // 文件可能已被 onDownload promote 走；再扫一次（必须限本轮时间，勿返回上轮记录）
         if (!fsSync.existsSync(ready.full)) {
-          const recent = (bs.getShared().recentDownloads || []).slice(-3).reverse();
-          const hit = recent.find((r) => r && r.path && (r.ok || r.skipped));
+          const recent = (bs.getShared().recentDownloads || []).slice(-5).reverse();
+          const hit = recent.find(
+            (r) =>
+              r &&
+              r.path &&
+              (r.ok || r.skipped) &&
+              Date.parse(r.at || 0) >= sinceMs
+          );
           if (hit) return { ok: true, saved: hit, via: 'recent-after-promote' };
           continue;
         }
@@ -143,7 +161,7 @@ function createDownloadHelpers(ctx) {
           fsSync,
           stageRoot,
           dlRoot,
-          preferredName || ready.name,
+          preferredName || (looksLikeStageTmpName(ready.name) ? '' : ready.name),
           pending
         );
         if (orphan && orphan.path) {
@@ -203,10 +221,12 @@ function createDownloadHelpers(ctx) {
       ...(bs.getReservedFinalPaths() || []),
       ...(Array.isArray(extraReserved) ? extraReserved : [])
     ];
+    // 仅用户显式 filename/path 才覆盖浏览器建议名；避免残留 pending 把本轮文件改成上轮名
+    const explicit = bs.pendingHasExplicitName(p);
     return resolveSaveTarget({
-      path: p.path,
+      path: explicit ? p.path : undefined,
       dir: p.dir || p.saveDir,
-      filename: p.filename,
+      filename: explicit && p.filename ? p.filename : undefined,
       suggested: suggestedRaw,
       url,
       defaultDir: dlRoot,
@@ -373,16 +393,35 @@ function createDownloadHelpers(ctx) {
     }
     if (!candidates.length) return null;
     candidates.sort((a, b) => b.mtime - a.mtime);
+    const explicit = bs.pendingHasExplicitName(pending);
+    const wantName = explicit
+      ? String(pending.filename || path.basename(pending.path || '') || '').trim()
+      : '';
+    // 匹配 staging：仅当用户指定名且 staging 里确有同名；否则取最新成品（勿用上轮 preferredName）
     const pick =
-      (preferredName &&
-        candidates.find(
-          (c) => c.name.toLowerCase() === String(preferredName).toLowerCase()
-        )) ||
+      (wantName &&
+        candidates.find((c) => c.name.toLowerCase() === wantName.toLowerCase())) ||
       candidates[0];
-    // 成品已在 staging：完成后再 claim 最终名
+    // 建议名：显式用户名 > 浏览器/CDP 真实名（非 stage 临时名）> preferred 仅作 suggested
+    let suggestedForClaim = '';
+    if (explicit && wantName) {
+      suggestedForClaim = wantName;
+    } else if (pick.name && !looksLikeStageTmpName(pick.name)) {
+      suggestedForClaim = pick.name;
+    } else if (preferredName && !looksLikeStageTmpName(preferredName)) {
+      suggestedForClaim = preferredName;
+    } else {
+      suggestedForClaim = pick.name;
+    }
+    // 成品已在 staging：完成后再 claim；未显式指定时不要把 preferred 写进 pending.filename
+    const pendingForClaim = { ...(pending || {}) };
+    if (!explicit) {
+      delete pendingForClaim.filename;
+      delete pendingForClaim.path;
+    }
     const { target, reservedPath } = claimSaveTarget(
-      { ...(pending || {}), filename: pending?.filename || preferredName || pick.name },
-      preferredName || pick.name,
+      pendingForClaim,
+      suggestedForClaim,
       '',
       dlRoot
     );
