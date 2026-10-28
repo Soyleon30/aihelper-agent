@@ -212,8 +212,39 @@ function createDownloadTools(options = {}) {
           dest = target.path;
         }
 
+        // 写入前再核同名：下载期间可能已有其它文件落到同路径
+        if (!force) {
+          const recheck = resolveSaveTarget({
+            path: dest,
+            defaultDir: root,
+            userDataPath,
+            skipIfExists: skipExisting,
+            force: false
+          });
+          if (recheck.skipped) {
+            return {
+              ok: true,
+              skipped: true,
+              reason: recheck.reason || 'file_exists',
+              url,
+              path: recheck.path,
+              filename: recheck.filename,
+              size: recheck.size,
+              message: recheck.message || '目标文件已存在，跳过下载'
+            };
+          }
+          dest = recheck.path;
+        }
         await fsp.mkdir(path.dirname(dest), { recursive: true });
         const buf = await res.buffer();
+        // 非 force：若仍撞上有效文件则改名（禁止覆盖）
+        if (!force && fs.existsSync(dest)) {
+          try {
+            if (fs.statSync(dest).size > 0) {
+              dest = uniquePath(path.dirname(dest), path.basename(dest));
+            }
+          } catch (_) {}
+        }
         await fsp.writeFile(dest, buf);
 
         const hash = crypto.createHash('sha256').update(buf).digest('hex');

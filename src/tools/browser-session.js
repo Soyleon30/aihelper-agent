@@ -27,7 +27,14 @@ let shared = {
   /** 对话点「停止」时置 true，工具轮询后抛错 */
   aborted: false,
   /** 下一次浏览器 download 事件落盘选项（filename/path/dir/skipIfExists） */
-  pendingDownloadSave: null
+  pendingDownloadSave: null,
+  /** 连续下载时的 pending 队列（FIFO）；单槽 pendingDownloadSave 仍兼容 peek */
+  pendingDownloadQueue: [],
+  /**
+   * 正在写入的最终路径（小写 key → 真实路径）。
+   * plan 时也算「已占用」，避免 A 尚未 promote 时 B 仍拿到同一最终名而覆盖。
+   */
+  inflightFinalPaths: Object.create(null)
 };
 
 function requestAbort() {
@@ -121,18 +128,69 @@ function detectBrowserName(exePath) {
   return path.basename(exePath || '') || 'browser';
 }
 
+function pathKey(p) {
+  const s = path.resolve(String(p || ''));
+  if (!s) return '';
+  return process.platform === 'win32' ? s.toLowerCase() : s;
+}
+
 function setPendingDownloadSave(opts) {
-  shared.pendingDownloadSave = opts && typeof opts === 'object' ? { ...opts } : null;
+  const o = opts && typeof opts === 'object' ? { ...opts } : null;
+  if (!Array.isArray(shared.pendingDownloadQueue)) shared.pendingDownloadQueue = [];
+  if (o) {
+    shared.pendingDownloadQueue.push(o);
+    shared.pendingDownloadSave = o;
+  } else {
+    shared.pendingDownloadSave = null;
+  }
 }
 
 function takePendingDownloadSave() {
-  const o = shared.pendingDownloadSave;
-  shared.pendingDownloadSave = null;
+  if (!Array.isArray(shared.pendingDownloadQueue)) shared.pendingDownloadQueue = [];
+  let o = null;
+  if (shared.pendingDownloadQueue.length) {
+    o = shared.pendingDownloadQueue.shift();
+  } else if (shared.pendingDownloadSave) {
+    o = shared.pendingDownloadSave;
+  }
+  shared.pendingDownloadSave = shared.pendingDownloadQueue[0] || null;
   return o;
 }
 
 function peekPendingDownloadSave() {
+  if (Array.isArray(shared.pendingDownloadQueue) && shared.pendingDownloadQueue.length) {
+    return shared.pendingDownloadQueue[0];
+  }
   return shared.pendingDownloadSave;
+}
+
+/** 登记「正在写入」的最终路径，供后续下载避让 */
+function reserveFinalPath(p) {
+  const key = pathKey(p);
+  if (!key) return;
+  if (!shared.inflightFinalPaths || typeof shared.inflightFinalPaths !== 'object') {
+    shared.inflightFinalPaths = Object.create(null);
+  }
+  shared.inflightFinalPaths[key] = path.resolve(String(p));
+}
+
+function releaseFinalPath(p) {
+  const key = pathKey(p);
+  if (!key || !shared.inflightFinalPaths) return;
+  delete shared.inflightFinalPaths[key];
+}
+
+function getReservedFinalPaths() {
+  const m = shared.inflightFinalPaths;
+  if (!m || typeof m !== 'object') return [];
+  return Object.keys(m)
+    .map((k) => m[k])
+    .filter(Boolean);
+}
+
+function isFinalPathReserved(p) {
+  const key = pathKey(p);
+  return !!(key && shared.inflightFinalPaths && shared.inflightFinalPaths[key]);
 }
 
 function pushDownloadRecord(rec) {
@@ -301,6 +359,9 @@ async function closeAll() {
   shared.context = null;
   shared.browser = null;
   shared.listenersBound = false;
+  shared.pendingDownloadSave = null;
+  shared.pendingDownloadQueue = [];
+  shared.inflightFinalPaths = Object.create(null);
   logAction('browser.session_closed', {});
   return { closed: true };
 }
@@ -514,6 +575,10 @@ module.exports = {
   setPendingDownloadSave,
   takePendingDownloadSave,
   peekPendingDownloadSave,
+  reserveFinalPath,
+  releaseFinalPath,
+  getReservedFinalPaths,
+  isFinalPathReserved,
   waitNextDownload,
   requestAbort,
   clearAbort,

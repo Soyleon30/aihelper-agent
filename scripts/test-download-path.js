@@ -83,6 +83,33 @@ ok('incoming under root', stage === path.join(tmp, '.aihelper-incoming'));
 const u = uniquePath(tmp, 'report.pdf');
 ok('uniquePath increments', /report\(\d+\)\.pdf$/i.test(u));
 
+// inflight reserved：最终目录尚无文件，也应避让
+const reservedPath = path.join(tmp, 'inflight.bin');
+const withRes = resolveSaveTarget({
+  filename: 'inflight.bin',
+  defaultDir: tmp,
+  force: false,
+  reserved: [reservedPath]
+});
+ok(
+  'reserved counts as taken',
+  !withRes.skipped &&
+    withRes.path !== reservedPath &&
+    /inflight\(\d+\)\.bin$/i.test(withRes.path)
+);
+
+const uniqRes = uniquePath(tmp, 'inflight.bin', [reservedPath]);
+ok('uniquePath respects reserved', uniqRes !== reservedPath);
+
+// 模拟连续 claim：A 占位后 B 必须改名
+const aPath = path.join(tmp, 'race.pdf');
+const b = resolveSaveTarget({
+  filename: 'race.pdf',
+  defaultDir: tmp,
+  reserved: [aPath]
+});
+ok('second concurrent rename', b.path !== aPath && /race\(1\)\.pdf$/i.test(b.path));
+
 // cleanup
 try {
   fs.rmSync(tmp, { recursive: true, force: true });

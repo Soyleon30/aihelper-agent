@@ -154,6 +154,12 @@ function pickDownloadFilename(opts = {}) {
   return candidates[0].name;
 }
 
+function pathKey(p) {
+  const s = path.resolve(String(p || ''));
+  if (!s) return '';
+  return process.platform === 'win32' ? s.toLowerCase() : s;
+}
+
 /** Windows 下大小写不敏感的存在判断；返回实际路径（保留已有文件的真实大小写） */
 function existingPath(p) {
   const want = path.resolve(String(p || ''));
@@ -174,14 +180,39 @@ function existingPath(p) {
   }
 }
 
-function uniquePath(dir, base) {
+/**
+ * 路径是否「已占用」：磁盘上有有效文件，或 reserved 集合中（正在写入、尚未 promote）。
+ * 空文件（size=0）不视为占用，允许重下覆盖空壳。
+ */
+function isPathTaken(p, reserved) {
+  const want = path.resolve(String(p || ''));
+  if (!want) return false;
+  const key = pathKey(want);
+  const list = Array.isArray(reserved) ? reserved : [];
+  for (const r of list) {
+    if (pathKey(r) === key) return true;
+  }
+  const hit = existingPath(want);
+  if (!hit) return false;
+  try {
+    const size = fs.statSync(hit).size;
+    return size > 0;
+  } catch (_) {
+    return true;
+  }
+}
+
+/**
+ * 同名避让。reserved：其它下载正在写入的最终路径，也算占用。
+ */
+function uniquePath(dir, base, reserved) {
   let p = path.join(dir, base);
-  if (!existingPath(p)) return p;
+  if (!isPathTaken(p, reserved)) return p;
   const ext = path.extname(base);
   const stem = path.basename(base, ext);
   for (let i = 1; i < 1000; i++) {
     p = path.join(dir, `${stem}(${i})${ext}`);
-    if (!existingPath(p)) return p;
+    if (!isPathTaken(p, reserved)) return p;
   }
   return path.join(dir, `${stem}_${Date.now()}${ext}`);
 }
@@ -242,31 +273,43 @@ function resolveSaveTarget(opts = {}) {
   const force = opts.force === true;
   // 默认 false：同名改名，不跳过、不覆盖
   const skipIfExists = opts.skipIfExists === true;
+  // 其它下载正在写入的最终路径（尚未落盘也算占用）
+  const reserved = Array.isArray(opts.reserved) ? opts.reserved : [];
   const existed = existingPath(dest);
+  const reservedHit = isPathTaken(dest, reserved) && !existed;
 
-  if (!force && existed) {
+  if (!force && (existed || reservedHit)) {
     let size = 0;
-    try {
-      size = fs.statSync(existed).size;
-    } catch (_) {}
-    // 0 字节空壳：不跳过，直接覆盖写
-    if (size > 0) {
-      if (skipIfExists) {
+    let occupiedPath = existed || dest;
+    if (existed) {
+      try {
+        size = fs.statSync(existed).size;
+      } catch (_) {}
+    }
+    // 0 字节空壳且无 inflight：不跳过，允许覆盖写
+    const effectivelyTaken = reservedHit || size > 0;
+    if (effectivelyTaken) {
+      if (skipIfExists && !reservedHit) {
         return {
           ok: true,
           skipped: true,
           reason: 'file_exists',
-          dir: path.dirname(existed),
-          filename: path.basename(existed),
-          path: existed,
+          dir: path.dirname(occupiedPath),
+          filename: path.basename(occupiedPath),
+          path: occupiedPath,
           size,
           message: '目标文件已存在，跳过下载',
           explicitPath
         };
       }
-      // 默认同名改名避让（force 才覆盖）
-      dest = uniquePath(dir, base);
-    } else {
+      if (skipIfExists && reservedHit) {
+        // 最终目录尚无文件，但是同名正在写入 → 仍应改名，不能 skip 成「已有」
+        dest = uniquePath(dir, base, reserved);
+      } else {
+        // 默认同名改名避让（force 才覆盖）；含 inflight 占用
+        dest = uniquePath(dir, base, reserved);
+      }
+    } else if (existed) {
       dest = existed;
     }
   }
@@ -290,6 +333,8 @@ module.exports = {
   filenameFromUrl,
   uniquePath,
   existingPath,
+  isPathTaken,
+  pathKey,
   resolveSaveTarget,
   resolveIncomingDir,
   ensureDir,

@@ -1,5 +1,14 @@
 # 变更日志
 
+## [1.6.23] — 2026-10-28
+
+### 下载落盘：完成后再定名 + 禁止静默覆盖
+- **根因**：`planSaveTarget` 在 saveAs 前就定最终路径；A 尚未 promote 时 B 仍看到最终目录无文件 → 同名路径；`promoteStagedFile` 对已存在目标 `unlink` 覆盖
+- 顺序改为：staging 唯一临时名 → **完成后再** `claimSaveTarget`（plan + inflight 占位）→ promote；非 `overwrite` 禁止 unlink 覆盖，撞车再 `uniquePath`
+- `inflightFinalPaths`：正在写入的最终路径也算占用，连续同名下载会得到 `file(1).ext`
+- pending 改为 FIFO 队列，连续 `browser_download` 不再丢 options
+- HTTP `download_file` / `httpDownloadToDir` 写入前再核同名
+
 ## [1.6.22] — 2026-10-15
 
 ### Excel 读写与汇总
